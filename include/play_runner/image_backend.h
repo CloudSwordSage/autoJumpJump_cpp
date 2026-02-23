@@ -26,6 +26,13 @@ namespace play_runner {
             int foot_y;
     };
 
+    struct FailMatchResult {
+            bool detected;
+            int match_x;
+            int match_y;
+            double match_score;
+    };
+
     class ImageBackend {
         public:
             ImageBackend();
@@ -69,6 +76,18 @@ namespace play_runner {
                 int width,
                 int height,
                 int min_area
+            );
+
+            static FailMatchResult MatchFailTemplate(
+                const std::uint8_t * bgr,
+                int width,
+                int height,
+                const std::vector<std::uint8_t> & fail_template,
+                int template_width,
+                int template_height,
+                double match_threshold,
+                int search_region_top_ratio,
+                int search_region_left_ratio
             );
     };
 

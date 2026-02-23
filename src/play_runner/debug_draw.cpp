@@ -27,6 +27,7 @@ namespace play_runner {
         HPEN g_pen_target_center = nullptr;
         HPEN g_pen_target_line = nullptr;
         HPEN g_pen_candidates = nullptr;
+        HPEN g_pen_fail = nullptr;
         HBRUSH g_brush_foot = nullptr;
         HBRUSH g_brush_target_center = nullptr;
 
@@ -134,6 +135,9 @@ namespace play_runner {
             }
             if (!g_pen_candidates) {
                 g_pen_candidates = CreatePen(PS_SOLID, 1, RGB(100, 100, 100));
+            }
+            if (!g_pen_fail) {
+                g_pen_fail = CreatePen(PS_SOLID, 3, RGB(255, 0, 0));
             }
             if (!g_brush_foot) {
                 g_brush_foot = CreateSolidBrush(RGB(0, 0, 255));
@@ -382,6 +386,37 @@ namespace play_runner {
             DrawTextLine(hdc, 10, 5, RGB(0, 0, 0), text);
         }
 
+        void DrawFailDetected(
+            HDC hdc,
+            int fail_x,
+            int fail_y,
+            int fail_w,
+            int fail_h
+        ) {
+            if (fail_w <= 0 || fail_h <= 0) {
+                return;
+            }
+
+            HPEN pen = g_pen_fail
+                           ? g_pen_fail
+                           : static_cast<HPEN>(GetStockObject(WHITE_PEN));
+            HGDIOBJ old_pen = SelectObject(hdc, pen);
+            HGDIOBJ old_brush = SelectObject(hdc, GetStockObject(HOLLOW_BRUSH));
+
+            Rectangle(hdc, fail_x, fail_y, fail_x + fail_w, fail_y + fail_h);
+
+            SelectObject(hdc, old_brush);
+            SelectObject(hdc, old_pen);
+
+            DrawTextLine(
+                hdc,
+                fail_x,
+                fail_y - 15,
+                RGB(255, 0, 0),
+                "FAIL DETECTED"
+            );
+        }
+
     } // namespace
 
     void InitDebugWindow(
@@ -432,7 +467,12 @@ namespace play_runner {
         const TargetBlock & target,
         double fps,
         const std::string & capture_method,
-        const std::string & status_text
+        const std::string & status_text,
+        bool fail_detected,
+        int fail_x,
+        int fail_y,
+        int fail_w,
+        int fail_h
     ) {
         (void)title;
         (void)monitor_scale;
@@ -550,6 +590,9 @@ namespace play_runner {
             cropped_h,
             "ESC/Q:Quit | S:Start Auto | D:Stop Auto | SPACE:Jump | P:Capture"
         );
+        if (fail_detected && fail_x >= 0 && fail_y >= 0 && fail_w > 0 && fail_h > 0) {
+            DrawFailDetected(hdc, fail_x, fail_y, fail_w, fail_h);
+        }
 
         if (g_overlay_bits && g_overlay_width == cropped_w &&
             g_overlay_height == cropped_h) {

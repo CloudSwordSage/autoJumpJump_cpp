@@ -326,4 +326,67 @@ namespace play_runner {
         return result;
     }
 
+    FailMatchResult ImageBackend::MatchFailTemplate(
+        const std::uint8_t * bgr,
+        int width,
+        int height,
+        const std::vector<std::uint8_t> & fail_template,
+        int template_width,
+        int template_height,
+        double match_threshold,
+        int search_region_top_ratio,
+        int search_region_left_ratio
+    ) {
+        FailMatchResult result{};
+        result.detected = false;
+        result.match_x = -1;
+        result.match_y = -1;
+        result.match_score = 0.0;
+
+        if (!bgr || template_width <= 0 || template_height <= 0 ||
+            fail_template.empty()) {
+            return result;
+        }
+
+        // 将 BGR 转换为灰度图
+        cv::Mat bgr_mat(height, width, CV_8UC3, const_cast<std::uint8_t*>(bgr));
+        cv::Mat gray_mat;
+        cv::cvtColor(bgr_mat, gray_mat, cv::COLOR_BGR2GRAY);
+
+        // 加载模板为灰度图
+        cv::Mat templ_mat(template_height, template_width, CV_8UC1,
+                          const_cast<std::uint8_t*>(fail_template.data()));
+
+        // 计算搜索区域：仅在下边 1/search_region_top_ratio、左侧 1/search_region_left_ratio 的区域搜索
+        int search_y_start = height * (search_region_top_ratio - 1) / search_region_top_ratio;
+        int search_height = height - search_y_start;
+        int search_x_start = 0;
+        int search_width = width / search_region_left_ratio;
+
+        if (search_height < template_height || search_width < template_width) {
+            return result;
+        }
+
+        // 裁剪搜索区域
+        cv::Mat search_roi = gray_mat(cv::Rect(search_x_start, search_y_start, search_width, search_height));
+
+        // 使用 TM_CCOEFF_NORMED 进行模板匹配
+        cv::Mat match_result;
+        cv::matchTemplate(search_roi, templ_mat, match_result, cv::TM_CCOEFF_NORMED);
+
+        // 查找最佳匹配位置
+        double min_val, max_val;
+        cv::Point min_loc, max_loc;
+        cv::minMaxLoc(match_result, &min_val, &max_val, &min_loc, &max_loc);
+
+        if (max_val >= match_threshold) {
+            result.detected = true;
+            result.match_x = search_x_start + max_loc.x;
+            result.match_y = search_y_start + max_loc.y;
+            result.match_score = max_val;
+        }
+
+        return result;
+    }
+
 } // namespace play_runner

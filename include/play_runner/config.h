@@ -42,6 +42,13 @@ namespace play_runner {
             float nms_iou_threshold;
     };
 
+    struct FailTemplateConfig {
+            std::string template_path;
+            double match_threshold;
+            int search_region_top_ratio;
+            int search_region_left_ratio;
+    };
+
     struct DisplayConfig {
             bool enable_monitor_window;
     };
@@ -56,6 +63,7 @@ namespace play_runner {
             LabConfig lab;
             JumpConfig jump;
             OnnxConfig onnx;
+            FailTemplateConfig fail_template;
             DisplayConfig display;
             LoggingConfig logging;
             bool debug;

@@ -34,7 +34,12 @@ namespace play_runner {
         const TargetBlock & target,
         double fps,
         const std::string & capture_method,
-        const std::string & status_text
+        const std::string & status_text,
+        bool fail_detected = false,
+        int fail_x = -1,
+        int fail_y = -1,
+        int fail_w = 0,
+        int fail_h = 0
     );
 
 } // namespace play_runner

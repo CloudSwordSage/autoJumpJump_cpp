@@ -66,6 +66,7 @@ add_custom_command(TARGET cpp-play-runner POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}/config
     COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}/models
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${DIST_DIR}/fail
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         $<TARGET_FILE:cpp-play-runner>
         ${DIST_DIR}/$<TARGET_FILE_NAME:cpp-play-runner>
@@ -84,4 +85,7 @@ add_custom_command(TARGET cpp-play-runner POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_CURRENT_SOURCE_DIR}/models/yolo11n_last.onnx
         ${DIST_DIR}/models/yolo11n_last.onnx
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/fail/fail.png
+        ${DIST_DIR}/fail/fail.png
 )

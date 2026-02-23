@@ -30,6 +30,11 @@
 
   "enable_monitor_window": true,
 
+  "fail_template_path": "fail/fail.png",
+  "fail_match_threshold": 0.8,
+  "fail_search_region_top_ratio": 3,
+  "fail_search_region_left_ratio": 3,
+
   "log_level": "info",
   "log_file_path": "logs/cpp_play_runner.log"
 }

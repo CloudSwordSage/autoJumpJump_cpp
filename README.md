@@ -149,6 +149,12 @@ cd dist
   // 监控窗口
   "enable_monitor_window": true,
 
+  // Fail 模板匹配配置
+  "fail_template_path": "fail/fail.png",
+  "fail_match_threshold": 0.8,
+  "fail_search_region_top_ratio": 3,
+  "fail_search_region_left_ratio": 3,
+
   // 日志配置
   "log_level": "info",
   "log_file_path": "logs/cpp_play_runner.log"
@@ -157,14 +163,18 @@ cd dist
 
 ### 主要参数说明
 
-| 参数                    | 说明                               |
-| ----------------------- | ---------------------------------- |
-| `process_name`          | 目标游戏窗口/进程名称              |
-| `debug`                 | 开启性能统计模式                   |
-| `enable_monitor_window` | 是否启用实时监控窗口（遮盖层显示） |
-| `jump_alpha`            | 跳跃力度系数，影响跳跃距离计算     |
-| `lab_*`                 | LAB 颜色空间参数，用于图像分割     |
-| `onnx_*`                | YOLO 模型推理参数                  |
+| 参数                           | 说明                                     |
+| ------------------------------ | ---------------------------------------- |
+| `process_name`                 | 目标游戏窗口/进程名称                    |
+| `debug`                        | 开启性能统计模式                         |
+| `enable_monitor_window`        | 是否启用实时监控窗口（遮盖层显示）       |
+| `jump_alpha`                   | 跳跃力度系数，影响跳跃距离计算           |
+| `lab_*`                        | LAB 颜色空间参数，用于图像分割           |
+| `onnx_*`                       | YOLO 模型推理参数                        |
+| `fail_template_path`           | Fail 提示模板图片路径                    |
+| `fail_match_threshold`         | 模板匹配阈值 (0-1)，越高越严格           |
+| `fail_search_region_top_ratio` | 搜索区域比例，3 表示仅在下边 1/3 区域搜索  |
+| `fail_search_region_left_ratio`| 左侧搜索区域比例，3 表示仅在左侧 1/3 区域  |
 
 ## 工作原理
 

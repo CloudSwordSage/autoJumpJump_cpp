@@ -63,6 +63,11 @@ namespace play_runner {
             config.onnx.score_threshold = 0.25f;
             config.onnx.nms_iou_threshold = 0.45f;
 
+            config.fail_template.template_path = "fail/fail.png";
+            config.fail_template.match_threshold = 0.8;
+            config.fail_template.search_region_top_ratio = 3;
+            config.fail_template.search_region_left_ratio = 3;
+
             config.display.enable_monitor_window = true;
 
             config.logging.level = LogLevel::Info;
@@ -199,6 +204,27 @@ namespace play_runner {
             config.display.enable_monitor_window
         );
 
+        AssignIfPresent(
+            j,
+            "fail_template_path",
+            config.fail_template.template_path
+        );
+        AssignIfPresent(
+            j,
+            "fail_match_threshold",
+            config.fail_template.match_threshold
+        );
+        AssignIfPresent(
+            j,
+            "fail_search_region_top_ratio",
+            config.fail_template.search_region_top_ratio
+        );
+        AssignIfPresent(
+            j,
+            "fail_search_region_left_ratio",
+            config.fail_template.search_region_left_ratio
+        );
+
         config.logging.level =
             ParseLogLevelJson(j, "log_level", config.logging.level);
         AssignIfPresent(j, "log_file_path", config.logging.file_path);
@@ -217,6 +243,12 @@ namespace play_runner {
             model_path = base / model_path;
         }
         config.onnx.model_path = model_path.string();
+
+        std::filesystem::path fail_template_path(config.fail_template.template_path);
+        if (!fail_template_path.is_absolute()) {
+            fail_template_path = base / fail_template_path;
+        }
+        config.fail_template.template_path = fail_template_path.string();
 
         return config;
     }

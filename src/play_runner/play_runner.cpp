@@ -16,6 +16,7 @@
 #include <map>
 #include <string>
 #include <iomanip>
+#include <fstream>
 
 #include <opencv2/opencv.hpp>
 
@@ -138,6 +139,36 @@ namespace play_runner {
 
             InputControl input_control;
             OnnxYoloInference onnx_infer(config_->onnx);
+
+            // 加载 fail 模板
+            std::vector<std::uint8_t> fail_template;
+            int fail_template_width = 0;
+            int fail_template_height = 0;
+            {
+                std::ifstream ifs(config_->fail_template.template_path, std::ios::binary);
+                if (ifs.is_open()) {
+                    ifs.seekg(0, std::ios::end);
+                    std::streamsize size = ifs.tellg();
+                    ifs.seekg(0, std::ios::beg);
+                    fail_template.resize(static_cast<size_t>(size));
+                    if (ifs.read(reinterpret_cast<char*>(fail_template.data()), size)) {
+                        Logger::Instance().Info("Fail template loaded: " + config_->fail_template.template_path);
+                        // 尝试从 PNG 文件加载为灰度图
+                        cv::Mat templ = cv::imread(config_->fail_template.template_path, cv::IMREAD_GRAYSCALE);
+                        if (!templ.empty()) {
+                            fail_template_width = templ.cols;
+                            fail_template_height = templ.rows;
+                            fail_template.assign(templ.data, templ.data + templ.total() * templ.elemSize());
+                            Logger::Instance().Info(
+                                "Fail template size: " + std::to_string(fail_template_width) +
+                                "x" + std::to_string(fail_template_height)
+                            );
+                        }
+                    }
+                } else {
+                    Logger::Instance().Warn("Fail template file not found: " + config_->fail_template.template_path);
+                }
+            }
 
             std::atomic<bool> exit_requested(false);
             std::atomic<bool> auto_jump_enabled(false);
@@ -333,6 +364,38 @@ namespace play_runner {
                     );
                     profiler.EndTiming("ONNX_Inference");
 
+                    // Fail 模板匹配检测
+                    FailMatchResult fail_match;
+                    if (!fail_template.empty() && fail_template_width > 0 && fail_template_height > 0) {
+                        profiler.StartTiming("Fail_Template_Match");
+                        fail_match = ImageBackend::MatchFailTemplate(
+                            cropped_mat.data,
+                            cropped_w,
+                            cropped_h,
+                            fail_template,
+                            fail_template_width,
+                            fail_template_height,
+                            config_->fail_template.match_threshold,
+                            config_->fail_template.search_region_top_ratio,
+                            config_->fail_template.search_region_left_ratio
+                        );
+                        profiler.EndTiming("Fail_Template_Match");
+
+                        if (fail_match.detected) {
+                            Logger::Instance().Warn(
+                                "Fail detected! Match score: " +
+                                std::to_string(fail_match.match_score) +
+                                " at (" + std::to_string(fail_match.match_x) +
+                                ", " + std::to_string(fail_match.match_y) + ")"
+                            );
+                            // 检测到失败，重置状态
+                            stable_frames = 0;
+                            last_foot_x = -1;
+                            last_foot_y = -1;
+                            jump_in_progress = false;
+                        }
+                    }
+
                     // 优化：帧率统计在 continue 之前更新
                     frame_count += 1;
                     auto now = std::chrono::steady_clock::now();
@@ -444,7 +507,12 @@ namespace play_runner {
                         target,
                         fps,
                         capture_method,
-                        status_text
+                        status_text,
+                        fail_match.detected,
+                        fail_match.match_x,
+                        fail_match.match_y,
+                        fail_template_width,
+                        fail_template_height
                     );
                     profiler.EndTiming("Render_Debug");
 
