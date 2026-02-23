@@ -1,0 +1,7 @@
+.qwen/
+.trae/
+.vscode/
+
+build/
+dist/
+third_party/
