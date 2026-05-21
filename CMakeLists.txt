@@ -19,6 +19,9 @@ add_library(cpp-play-core STATIC
     src/play_runner/image_backend.cpp
     src/play_runner/inference.cpp
     src/play_runner/debug_draw.cpp
+    src/play_runner/performance_profiler.cpp
+    src/play_runner/fail_template_engine.cpp
+    src/play_runner/play_session.cpp
 )
 
 target_include_directories(cpp-play-core PUBLIC
