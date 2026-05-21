@@ -112,7 +112,8 @@ namespace play_runner {
         out_mask.assign(static_cast<std::size_t>(width * height), 0);
 
         // 使用 OpenCV 加速 BGR->Lab 转换
-        cv::Mat bgr_mat(height, width, CV_8UC3, const_cast<std::uint8_t*>(bgr));
+        cv::Mat
+            bgr_mat(height, width, CV_8UC3, const_cast<std::uint8_t *>(bgr));
         cv::Mat lab_mat;
         cv::cvtColor(bgr_mat, lab_mat, cv::COLOR_BGR2Lab);
 
@@ -126,16 +127,16 @@ namespace play_runner {
 
         // 逐像素计算 Lab 距离
         for (int y = roi_y_min; y < roi_y_max; ++y) {
-            const cv::Vec3b* lab_row = lab_mat.ptr<cv::Vec3b>(y);
-            std::uint8_t* mask_row = out_mask.data() + y * width;
-            
+            const cv::Vec3b * lab_row = lab_mat.ptr<cv::Vec3b>(y);
+            std::uint8_t * mask_row = out_mask.data() + y * width;
+
             for (int x = 0; x < width; ++x) {
-                const cv::Vec3b& lab = lab_row[x];
+                const cv::Vec3b & lab = lab_row[x];
                 float d_l = (static_cast<float>(lab[0]) - t_l) * w_l;
                 float d_a = (static_cast<float>(lab[1]) - t_a) * w_a;
                 float d_b = (static_cast<float>(lab[2]) - t_b) * w_b;
                 float dist = std::sqrt(d_l * d_l + d_a * d_a + d_b * d_b);
-                
+
                 mask_row[x] = (dist <= dist_thresh) ? 255 : 0;
             }
         }
@@ -143,7 +144,8 @@ namespace play_runner {
         // 使用 OpenCV 加速形态学操作
         if (morph_kernel_size == 3) {
             cv::Mat mask_mat(height, width, CV_8UC1, out_mask.data());
-            cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+            cv::Mat kernel =
+                cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
             cv::morphologyEx(mask_mat, mask_mat, cv::MORPH_OPEN, kernel);
             cv::morphologyEx(mask_mat, mask_mat, cv::MORPH_CLOSE, kernel);
         }
@@ -212,7 +214,8 @@ namespace play_runner {
 
         if (morph_kernel_size == 3) {
             cv::Mat mask_mat(height, width, CV_8UC1, out_mask.data());
-            cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
+            cv::Mat kernel =
+                cv::getStructuringElement(cv::MORPH_RECT, cv::Size(3, 3));
             cv::morphologyEx(mask_mat, mask_mat, cv::MORPH_OPEN, kernel);
             cv::morphologyEx(mask_mat, mask_mat, cv::MORPH_CLOSE, kernel);
         }
@@ -327,15 +330,19 @@ namespace play_runner {
     }
 
     FailMatchResult ImageBackend::MatchFailTemplate(
-        const std::uint8_t * bgr,
+        const std::uint8_t * gray,
         int width,
         int height,
         const std::vector<std::uint8_t> & fail_template,
         int template_width,
         int template_height,
         double match_threshold,
-        int search_region_top_ratio,
-        int search_region_left_ratio
+        int search_region_x_parts,
+        int search_region_x_start_part,
+        int search_region_x_end_part,
+        int search_region_y_parts,
+        int search_region_y_start_part,
+        int search_region_y_end_part
     ) {
         FailMatchResult result{};
         result.detected = false;
@@ -343,36 +350,74 @@ namespace play_runner {
         result.match_y = -1;
         result.match_score = 0.0;
 
-        if (!bgr || template_width <= 0 || template_height <= 0 ||
+        if (!gray || template_width <= 0 || template_height <= 0 ||
             fail_template.empty()) {
             return result;
         }
 
-        // 将 BGR 转换为灰度图
-        cv::Mat bgr_mat(height, width, CV_8UC3, const_cast<std::uint8_t*>(bgr));
-        cv::Mat gray_mat;
-        cv::cvtColor(bgr_mat, gray_mat, cv::COLOR_BGR2GRAY);
+        cv::Mat
+            gray_mat(height, width, CV_8UC1, const_cast<std::uint8_t *>(gray));
 
         // 加载模板为灰度图
-        cv::Mat templ_mat(template_height, template_width, CV_8UC1,
-                          const_cast<std::uint8_t*>(fail_template.data()));
+        cv::Mat templ_mat(
+            template_height,
+            template_width,
+            CV_8UC1,
+            const_cast<std::uint8_t *>(fail_template.data())
+        );
 
-        // 计算搜索区域：仅在下边 1/search_region_top_ratio、左侧 1/search_region_left_ratio 的区域搜索
-        int search_y_start = height * (search_region_top_ratio - 1) / search_region_top_ratio;
-        int search_height = height - search_y_start;
-        int search_x_start = 0;
-        int search_width = width / search_region_left_ratio;
+        if (search_region_x_parts <= 0 || search_region_y_parts <= 0) {
+            return result;
+        }
+
+        int x_start_part = search_region_x_start_part;
+        int x_end_part = search_region_x_end_part;
+        int y_start_part = search_region_y_start_part;
+        int y_end_part = search_region_y_end_part;
+
+        if (x_start_part < 0)
+            x_start_part = 0;
+        if (x_end_part > search_region_x_parts)
+            x_end_part = search_region_x_parts;
+        if (y_start_part < 0)
+            y_start_part = 0;
+        if (y_end_part > search_region_y_parts)
+            y_end_part = search_region_y_parts;
+
+        if (x_end_part <= x_start_part || y_end_part <= y_start_part) {
+            return result;
+        }
+
+        int search_x_start = width * x_start_part / search_region_x_parts;
+        int search_x_end = width * x_end_part / search_region_x_parts;
+        int search_y_start = height * y_start_part / search_region_y_parts;
+        int search_y_end = height * y_end_part / search_region_y_parts;
+
+        int search_width = search_x_end - search_x_start;
+        int search_height = search_y_end - search_y_start;
 
         if (search_height < template_height || search_width < template_width) {
             return result;
         }
 
         // 裁剪搜索区域
-        cv::Mat search_roi = gray_mat(cv::Rect(search_x_start, search_y_start, search_width, search_height));
+        cv::Mat search_roi = gray_mat(
+            cv::Rect(
+                search_x_start,
+                search_y_start,
+                search_width,
+                search_height
+            )
+        );
 
         // 使用 TM_CCOEFF_NORMED 进行模板匹配
         cv::Mat match_result;
-        cv::matchTemplate(search_roi, templ_mat, match_result, cv::TM_CCOEFF_NORMED);
+        cv::matchTemplate(
+            search_roi,
+            templ_mat,
+            match_result,
+            cv::TM_CCOEFF_NORMED
+        );
 
         // 查找最佳匹配位置
         double min_val, max_val;
@@ -383,6 +428,152 @@ namespace play_runner {
             result.detected = true;
             result.match_x = search_x_start + max_loc.x;
             result.match_y = search_y_start + max_loc.y;
+            result.match_score = max_val;
+        }
+
+        return result;
+    }
+
+    FailMatchResult ImageBackend::MatchFailTemplateFast(
+        const std::uint8_t * gray,
+        int width,
+        int height,
+        const std::vector<std::uint8_t> & fail_template,
+        int template_width,
+        int template_height,
+        double match_threshold,
+        int search_region_x_parts,
+        int search_region_x_start_part,
+        int search_region_x_end_part,
+        int search_region_y_parts,
+        int search_region_y_start_part,
+        int search_region_y_end_part
+    ) {
+        const double scale = 0.5;
+
+        FailMatchResult result{};
+        result.detected = false;
+        result.match_x = -1;
+        result.match_y = -1;
+        result.match_score = 0.0;
+
+        if (!gray || template_width <= 0 || template_height <= 0 ||
+            fail_template.empty()) {
+            return result;
+        }
+        if (scale <= 0.0 || scale >= 1.0) {
+            return result;
+        }
+
+        if (search_region_x_parts <= 0 || search_region_y_parts <= 0) {
+            return result;
+        }
+
+        int x_start_part = search_region_x_start_part;
+        int x_end_part = search_region_x_end_part;
+        int y_start_part = search_region_y_start_part;
+        int y_end_part = search_region_y_end_part;
+
+        if (x_start_part < 0)
+            x_start_part = 0;
+        if (x_end_part > search_region_x_parts)
+            x_end_part = search_region_x_parts;
+        if (y_start_part < 0)
+            y_start_part = 0;
+        if (y_end_part > search_region_y_parts)
+            y_end_part = search_region_y_parts;
+
+        if (x_end_part <= x_start_part || y_end_part <= y_start_part) {
+            return result;
+        }
+
+        int search_x_start = width * x_start_part / search_region_x_parts;
+        int search_x_end = width * x_end_part / search_region_x_parts;
+        int search_y_start = height * y_start_part / search_region_y_parts;
+        int search_y_end = height * y_end_part / search_region_y_parts;
+
+        int search_width = search_x_end - search_x_start;
+        int search_height = search_y_end - search_y_start;
+        if (search_width <= 0 || search_height <= 0) {
+            return result;
+        }
+
+        cv::Mat
+            gray_mat(height, width, CV_8UC1, const_cast<std::uint8_t *>(gray));
+
+        cv::Mat templ_mat(
+            template_height,
+            template_width,
+            CV_8UC1,
+            const_cast<std::uint8_t *>(fail_template.data())
+        );
+
+        cv::Mat search_roi = gray_mat(
+            cv::Rect(
+                search_x_start,
+                search_y_start,
+                search_width,
+                search_height
+            )
+        );
+
+        int scaled_search_w =
+            static_cast<int>(std::round(search_width * scale));
+        int scaled_search_h =
+            static_cast<int>(std::round(search_height * scale));
+        int scaled_templ_w =
+            static_cast<int>(std::round(template_width * scale));
+        int scaled_templ_h =
+            static_cast<int>(std::round(template_height * scale));
+
+        if (scaled_search_w <= 0 || scaled_search_h <= 0 ||
+            scaled_templ_w <= 0 || scaled_templ_h <= 0) {
+            return result;
+        }
+
+        if (scaled_search_w < scaled_templ_w ||
+            scaled_search_h < scaled_templ_h) {
+            return result;
+        }
+
+        cv::Mat scaled_search;
+        cv::resize(
+            search_roi,
+            scaled_search,
+            cv::Size(scaled_search_w, scaled_search_h),
+            0.0,
+            0.0,
+            cv::INTER_AREA
+        );
+
+        cv::Mat scaled_templ;
+        cv::resize(
+            templ_mat,
+            scaled_templ,
+            cv::Size(scaled_templ_w, scaled_templ_h),
+            0.0,
+            0.0,
+            cv::INTER_AREA
+        );
+
+        cv::Mat match_result;
+        cv::matchTemplate(
+            scaled_search,
+            scaled_templ,
+            match_result,
+            cv::TM_CCOEFF_NORMED
+        );
+
+        double min_val = 0.0, max_val = 0.0;
+        cv::Point min_loc, max_loc;
+        cv::minMaxLoc(match_result, &min_val, &max_val, &min_loc, &max_loc);
+
+        if (max_val >= match_threshold) {
+            int dx = static_cast<int>(std::lround(max_loc.x / scale));
+            int dy = static_cast<int>(std::lround(max_loc.y / scale));
+            result.detected = true;
+            result.match_x = search_x_start + dx;
+            result.match_y = search_y_start + dy;
             result.match_score = max_val;
         }
 

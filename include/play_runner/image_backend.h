@@ -79,15 +79,35 @@ namespace play_runner {
             );
 
             static FailMatchResult MatchFailTemplate(
-                const std::uint8_t * bgr,
+                const std::uint8_t * gray,
                 int width,
                 int height,
                 const std::vector<std::uint8_t> & fail_template,
                 int template_width,
                 int template_height,
                 double match_threshold,
-                int search_region_top_ratio,
-                int search_region_left_ratio
+                int search_region_x_parts,
+                int search_region_x_start_part,
+                int search_region_x_end_part,
+                int search_region_y_parts,
+                int search_region_y_start_part,
+                int search_region_y_end_part
+            );
+
+            static FailMatchResult MatchFailTemplateFast(
+                const std::uint8_t * gray,
+                int width,
+                int height,
+                const std::vector<std::uint8_t> & fail_template,
+                int template_width,
+                int template_height,
+                double match_threshold,
+                int search_region_x_parts,
+                int search_region_x_start_part,
+                int search_region_x_end_part,
+                int search_region_y_parts,
+                int search_region_y_start_part,
+                int search_region_y_end_part
             );
     };
 

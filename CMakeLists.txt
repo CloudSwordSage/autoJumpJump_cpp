@@ -86,6 +86,9 @@ add_custom_command(TARGET cpp-play-runner POST_BUILD
         ${CMAKE_CURRENT_SOURCE_DIR}/models/yolo11n_last.onnx
         ${DIST_DIR}/models/yolo11n_last.onnx
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_CURRENT_SOURCE_DIR}/fail/fail.png
-        ${DIST_DIR}/fail/fail.png
+        ${CMAKE_CURRENT_SOURCE_DIR}/fail/fail_1.png
+        ${DIST_DIR}/fail/fail_1.png
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_CURRENT_SOURCE_DIR}/fail/fail_2.png
+        ${DIST_DIR}/fail/fail_2.png
 )

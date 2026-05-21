@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 #include "play_runner/logging.h"
 
@@ -44,9 +45,15 @@ namespace play_runner {
 
     struct FailTemplateConfig {
             std::string template_path;
+            std::vector<std::string> template_names;
             double match_threshold;
-            int search_region_top_ratio;
-            int search_region_left_ratio;
+            int search_region_x_parts;
+            int search_region_x_start_part;
+            int search_region_x_end_part;
+            int search_region_y_parts;
+            int search_region_y_start_part;
+            int search_region_y_end_part;
+            int fast_miss_fallback_threshold;
     };
 
     struct DisplayConfig {

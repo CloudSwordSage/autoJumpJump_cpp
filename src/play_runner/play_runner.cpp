@@ -16,7 +16,8 @@
 #include <map>
 #include <string>
 #include <iomanip>
-#include <fstream>
+#include <sstream>
+#include <filesystem>
 
 #include <opencv2/opencv.hpp>
 
@@ -141,32 +142,70 @@ namespace play_runner {
             OnnxYoloInference onnx_infer(config_->onnx);
 
             // 加载 fail 模板
-            std::vector<std::uint8_t> fail_template;
+            struct FailTemplateImage {
+                    std::vector<std::uint8_t> pixels;
+                    int width = 0;
+                    int height = 0;
+            };
+
+            std::vector<FailTemplateImage> fail_templates;
             int fail_template_width = 0;
             int fail_template_height = 0;
             {
-                std::ifstream ifs(config_->fail_template.template_path, std::ios::binary);
-                if (ifs.is_open()) {
-                    ifs.seekg(0, std::ios::end);
-                    std::streamsize size = ifs.tellg();
-                    ifs.seekg(0, std::ios::beg);
-                    fail_template.resize(static_cast<size_t>(size));
-                    if (ifs.read(reinterpret_cast<char*>(fail_template.data()), size)) {
-                        Logger::Instance().Info("Fail template loaded: " + config_->fail_template.template_path);
-                        // 尝试从 PNG 文件加载为灰度图
-                        cv::Mat templ = cv::imread(config_->fail_template.template_path, cv::IMREAD_GRAYSCALE);
-                        if (!templ.empty()) {
-                            fail_template_width = templ.cols;
-                            fail_template_height = templ.rows;
-                            fail_template.assign(templ.data, templ.data + templ.total() * templ.elemSize());
-                            Logger::Instance().Info(
-                                "Fail template size: " + std::to_string(fail_template_width) +
-                                "x" + std::to_string(fail_template_height)
+                std::filesystem::path base_path(
+                    config_->fail_template.template_path
+                );
+                if (!config_->fail_template.template_names.empty()) {
+                    for (const std::string & name :
+                         config_->fail_template.template_names) {
+                        std::filesystem::path template_file = base_path / name;
+                        cv::Mat templ = cv::imread(
+                            template_file.string(),
+                            cv::IMREAD_GRAYSCALE
+                        );
+                        if (templ.empty()) {
+                            Logger::Instance().Warn(
+                                "Fail template file not found: " +
+                                template_file.string()
                             );
+                            continue;
                         }
+
+                        FailTemplateImage loaded{};
+                        loaded.width = templ.cols;
+                        loaded.height = templ.rows;
+                        loaded.pixels.assign(
+                            templ.data,
+                            templ.data + templ.total() * templ.elemSize()
+                        );
+                        fail_templates.push_back(std::move(loaded));
+
+                        Logger::Instance().Info(
+                            "Fail template loaded: " + template_file.string()
+                        );
                     }
                 } else {
-                    Logger::Instance().Warn("Fail template file not found: " + config_->fail_template.template_path);
+                    cv::Mat templ =
+                        cv::imread(base_path.string(), cv::IMREAD_GRAYSCALE);
+                    if (templ.empty()) {
+                        Logger::Instance().Warn(
+                            "Fail template file not found: " +
+                            base_path.string()
+                        );
+                    } else {
+                        FailTemplateImage loaded{};
+                        loaded.width = templ.cols;
+                        loaded.height = templ.rows;
+                        loaded.pixels.assign(
+                            templ.data,
+                            templ.data + templ.total() * templ.elemSize()
+                        );
+                        fail_templates.push_back(std::move(loaded));
+
+                        Logger::Instance().Info(
+                            "Fail template loaded: " + base_path.string()
+                        );
+                    }
                 }
             }
 
@@ -192,6 +231,12 @@ namespace play_runner {
 
             auto start_time = std::chrono::steady_clock::now();
 
+            bool has_last_fail_log = false;
+            int last_fail_log_x = -1;
+            int last_fail_log_y = -1;
+            double last_fail_log_score = 0.0;
+            const double FAIL_SCORE_LOG_PRECISION = 0.001;
+
             bool monitor_enabled = config_->display.enable_monitor_window;
             std::string monitor_title = config_->capture.window_title;
             if (monitor_title.empty()) {
@@ -204,6 +249,7 @@ namespace play_runner {
                 HWND hwnd = reinterpret_cast<HWND>(
                     reinterpret_cast<void *>(window.handle)
                 );
+                int fail_fast_miss_count = 0;
                 while (!exit_requested.load()) {
                     if (!::IsWindow(hwnd)) {
                         exit_requested.store(true);
@@ -277,6 +323,9 @@ namespace play_runner {
 
                     int cropped_w = cropped_mat.cols;
                     int cropped_h = cropped_mat.rows;
+
+                    cv::Mat cropped_gray;
+                    cv::cvtColor(cropped_mat, cropped_gray, cv::COLOR_BGR2GRAY);
 
                     int roi_y_min = 0;
                     int roi_y_max = 0;
@@ -365,35 +414,128 @@ namespace play_runner {
                     profiler.EndTiming("ONNX_Inference");
 
                     // Fail 模板匹配检测
-                    FailMatchResult fail_match;
-                    if (!fail_template.empty() && fail_template_width > 0 && fail_template_height > 0) {
+                    FailMatchResult fail_match{false, -1, -1, 0.0};
+                    fail_template_width = 0;
+                    fail_template_height = 0;
+                    if (!fail_templates.empty()) {
                         profiler.StartTiming("Fail_Template_Match");
-                        fail_match = ImageBackend::MatchFailTemplate(
-                            cropped_mat.data,
-                            cropped_w,
-                            cropped_h,
-                            fail_template,
-                            fail_template_width,
-                            fail_template_height,
-                            config_->fail_template.match_threshold,
-                            config_->fail_template.search_region_top_ratio,
-                            config_->fail_template.search_region_left_ratio
-                        );
+                        int fast_fallback_threshold =
+                            config_->fail_template.fast_miss_fallback_threshold;
+                        bool should_run_slow = (fast_fallback_threshold <= 0);
+
+                        for (const FailTemplateImage & templ : fail_templates) {
+                            if (templ.pixels.empty() || templ.width <= 0 ||
+                                templ.height <= 0) {
+                                continue;
+                            }
+                            fail_match = ImageBackend::MatchFailTemplateFast(
+                                cropped_gray.data,
+                                cropped_w,
+                                cropped_h,
+                                templ.pixels,
+                                templ.width,
+                                templ.height,
+                                config_->fail_template.match_threshold,
+                                config_->fail_template.search_region_x_parts,
+                                config_->fail_template
+                                    .search_region_x_start_part,
+                                config_->fail_template.search_region_x_end_part,
+                                config_->fail_template.search_region_y_parts,
+                                config_->fail_template
+                                    .search_region_y_start_part,
+                                config_->fail_template.search_region_y_end_part
+                            );
+                            if (fail_match.detected) {
+                                fail_template_width = templ.width;
+                                fail_template_height = templ.height;
+                                fail_fast_miss_count = 0;
+                                break;
+                            }
+                        }
+
+                        if (!fail_match.detected && !should_run_slow) {
+                            fail_fast_miss_count += 1;
+                            if (fail_fast_miss_count >=
+                                fast_fallback_threshold) {
+                                should_run_slow = true;
+                                fail_fast_miss_count = 0;
+                            }
+                        }
+
+                        if (!fail_match.detected && should_run_slow) {
+                            for (const FailTemplateImage & templ :
+                                 fail_templates) {
+                                if (templ.pixels.empty() || templ.width <= 0 ||
+                                    templ.height <= 0) {
+                                    continue;
+                                }
+                                fail_match = ImageBackend::MatchFailTemplate(
+                                    cropped_gray.data,
+                                    cropped_w,
+                                    cropped_h,
+                                    templ.pixels,
+                                    templ.width,
+                                    templ.height,
+                                    config_->fail_template.match_threshold,
+                                    config_->fail_template
+                                        .search_region_x_parts,
+                                    config_->fail_template
+                                        .search_region_x_start_part,
+                                    config_->fail_template
+                                        .search_region_x_end_part,
+                                    config_->fail_template
+                                        .search_region_y_parts,
+                                    config_->fail_template
+                                        .search_region_y_start_part,
+                                    config_->fail_template
+                                        .search_region_y_end_part
+                                );
+                                if (fail_match.detected) {
+                                    fail_template_width = templ.width;
+                                    fail_template_height = templ.height;
+                                    break;
+                                }
+                            }
+                        }
                         profiler.EndTiming("Fail_Template_Match");
 
                         if (fail_match.detected) {
-                            Logger::Instance().Warn(
-                                "Fail detected! Match score: " +
-                                std::to_string(fail_match.match_score) +
-                                " at (" + std::to_string(fail_match.match_x) +
-                                ", " + std::to_string(fail_match.match_y) + ")"
-                            );
+                            double rounded_score = std::round(
+                                                       fail_match.match_score /
+                                                       FAIL_SCORE_LOG_PRECISION
+                                                   ) *
+                                                   FAIL_SCORE_LOG_PRECISION;
+                            bool should_log =
+                                !has_last_fail_log ||
+                                last_fail_log_x != fail_match.match_x ||
+                                last_fail_log_y != fail_match.match_y ||
+                                std::abs(last_fail_log_score - rounded_score) >
+                                    (FAIL_SCORE_LOG_PRECISION / 2.0);
+                            if (should_log) {
+                                std::ostringstream score_oss;
+                                score_oss << std::fixed << std::setprecision(3)
+                                          << rounded_score;
+                                Logger::Instance().Warn(
+                                    "Fail detected! Match score: " +
+                                    score_oss.str() + " at (" +
+                                    std::to_string(fail_match.match_x) + ", " +
+                                    std::to_string(fail_match.match_y) + ")"
+                                );
+                                has_last_fail_log = true;
+                                last_fail_log_x = fail_match.match_x;
+                                last_fail_log_y = fail_match.match_y;
+                                last_fail_log_score = rounded_score;
+                            }
                             // 检测到失败，重置状态
                             stable_frames = 0;
                             last_foot_x = -1;
                             last_foot_y = -1;
                             jump_in_progress = false;
+                        } else {
+                            has_last_fail_log = false;
                         }
+                    } else {
+                        has_last_fail_log = false;
                     }
 
                     // 优化：帧率统计在 continue 之前更新

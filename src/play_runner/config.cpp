@@ -63,10 +63,16 @@ namespace play_runner {
             config.onnx.score_threshold = 0.25f;
             config.onnx.nms_iou_threshold = 0.45f;
 
-            config.fail_template.template_path = "fail/fail.png";
+            config.fail_template.template_path = "fail";
+            config.fail_template.template_names = {"fail_1.png", "fail_2.png"};
             config.fail_template.match_threshold = 0.8;
-            config.fail_template.search_region_top_ratio = 3;
-            config.fail_template.search_region_left_ratio = 3;
+            config.fail_template.search_region_x_parts = 3;
+            config.fail_template.search_region_x_start_part = 1;
+            config.fail_template.search_region_x_end_part = 3;
+            config.fail_template.search_region_y_parts = 3;
+            config.fail_template.search_region_y_start_part = 2;
+            config.fail_template.search_region_y_end_part = 3;
+            config.fail_template.fast_miss_fallback_threshold = 10;
 
             config.display.enable_monitor_window = true;
 
@@ -211,18 +217,48 @@ namespace play_runner {
         );
         AssignIfPresent(
             j,
+            "fail_template_name",
+            config.fail_template.template_names
+        );
+        AssignIfPresent(
+            j,
             "fail_match_threshold",
             config.fail_template.match_threshold
         );
         AssignIfPresent(
             j,
-            "fail_search_region_top_ratio",
-            config.fail_template.search_region_top_ratio
+            "fail_search_region_x_parts",
+            config.fail_template.search_region_x_parts
         );
         AssignIfPresent(
             j,
-            "fail_search_region_left_ratio",
-            config.fail_template.search_region_left_ratio
+            "fail_search_region_x_start_part",
+            config.fail_template.search_region_x_start_part
+        );
+        AssignIfPresent(
+            j,
+            "fail_search_region_x_end_part",
+            config.fail_template.search_region_x_end_part
+        );
+        AssignIfPresent(
+            j,
+            "fail_search_region_y_parts",
+            config.fail_template.search_region_y_parts
+        );
+        AssignIfPresent(
+            j,
+            "fail_search_region_y_start_part",
+            config.fail_template.search_region_y_start_part
+        );
+        AssignIfPresent(
+            j,
+            "fail_search_region_y_end_part",
+            config.fail_template.search_region_y_end_part
+        );
+        AssignIfPresent(
+            j,
+            "fail_fast_miss_fallback_threshold",
+            config.fail_template.fast_miss_fallback_threshold
         );
 
         config.logging.level =
@@ -244,7 +280,9 @@ namespace play_runner {
         }
         config.onnx.model_path = model_path.string();
 
-        std::filesystem::path fail_template_path(config.fail_template.template_path);
+        std::filesystem::path fail_template_path(
+            config.fail_template.template_path
+        );
         if (!fail_template_path.is_absolute()) {
             fail_template_path = base / fail_template_path;
         }
