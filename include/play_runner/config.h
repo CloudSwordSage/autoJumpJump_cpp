@@ -80,4 +80,6 @@ namespace play_runner {
 
     AppConfig LoadConfigOrDefault(const std::string & path);
 
+    bool SaveConfig(const std::string & path, const AppConfig & config);
+
 } // namespace play_runner

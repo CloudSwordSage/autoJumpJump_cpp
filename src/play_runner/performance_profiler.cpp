@@ -10,6 +10,16 @@ namespace play_runner {
     PerformanceProfiler::PerformanceProfiler(bool enabled) : enabled_(enabled) {
     }
 
+    void PerformanceProfiler::SetEnabled(bool enabled) {
+        if (enabled_ == enabled) {
+            return;
+        }
+        enabled_ = enabled;
+        if (!enabled_) {
+            Reset();
+        }
+    }
+
     void PerformanceProfiler::StartTiming(const std::string & name) {
         if (!enabled_) {
             return;
@@ -68,4 +78,3 @@ namespace play_runner {
     }
 
 } // namespace play_runner
-

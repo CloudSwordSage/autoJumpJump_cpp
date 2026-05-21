@@ -1,8 +1,11 @@
 #pragma once
 
+#include <memory>
+
 namespace play_runner {
 
     struct AppConfig;
+    class ConfigUiState;
 
     class PlayRunner {
         public:
@@ -11,7 +14,7 @@ namespace play_runner {
             int Run();
 
         private:
-            AppConfig * config_;
+            std::shared_ptr<ConfigUiState> ui_state_;
     };
 
 } // namespace play_runner

@@ -21,6 +21,8 @@ namespace play_runner {
         public:
             explicit PerformanceProfiler(bool enabled);
 
+            void SetEnabled(bool enabled);
+
             void StartTiming(const std::string & name);
             void EndTiming(const std::string & name);
 
@@ -29,4 +31,3 @@ namespace play_runner {
     };
 
 } // namespace play_runner
-

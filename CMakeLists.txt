@@ -10,10 +10,48 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     add_link_options(-static-libgcc -static-libstdc++)
 endif()
 
+include(FetchContent)
+
+find_package(glfw3 CONFIG QUIET)
+if(NOT glfw3_FOUND)
+    FetchContent_Declare(
+        glfw
+        URL https://github.com/glfw/glfw/archive/refs/tags/3.4.tar.gz
+    )
+    FetchContent_MakeAvailable(glfw)
+endif()
+
+set(GLFW_TARGET glfw)
+if(TARGET glfw3::glfw)
+    set(GLFW_TARGET glfw3::glfw)
+elseif(TARGET glfw)
+    set(GLFW_TARGET glfw)
+elseif(TARGET glfw3)
+    set(GLFW_TARGET glfw3)
+endif()
+
+add_library(dear-imgui STATIC
+    imgui/imgui.cpp
+    imgui/imgui_draw.cpp
+    imgui/imgui_tables.cpp
+    imgui/imgui_widgets.cpp
+    imgui/misc/cpp/imgui_stdlib.cpp
+    imgui/backends/imgui_impl_glfw.cpp
+    imgui/backends/imgui_impl_opengl3.cpp
+)
+
+target_include_directories(dear-imgui PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/imgui
+)
+
+target_link_libraries(dear-imgui PUBLIC ${GLFW_TARGET})
+
 add_library(cpp-play-core STATIC
     src/play_runner/play_runner.cpp
     src/play_runner/logging.cpp
     src/play_runner/config.cpp
+    src/play_runner/config_ui_state.cpp
+    src/play_runner/config_ui.cpp
     src/play_runner/screen_capture.cpp
     src/play_runner/input_control.cpp
     src/play_runner/image_backend.cpp
@@ -32,9 +70,15 @@ target_include_directories(cpp-play-core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/opencv/include
 )
 
-add_executable(cpp-play-runner
-    src/main.cpp
-)
+if(WIN32)
+    add_executable(cpp-play-runner WIN32
+        src/main.cpp
+    )
+else()
+    add_executable(cpp-play-runner
+        src/main.cpp
+    )
+endif()
 
 target_link_libraries(cpp-play-runner PRIVATE cpp-play-core)
 
@@ -43,6 +87,9 @@ target_link_directories(cpp-play-core PUBLIC
 )
 
 target_link_libraries(cpp-play-core PUBLIC
+    dear-imgui
+    ${GLFW_TARGET}
+    opengl32
     onnxruntime
     onnxruntime_providers_shared
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/opencv/x64/mingw/staticlib/libopencv_highgui4130.a

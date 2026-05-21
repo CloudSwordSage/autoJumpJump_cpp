@@ -122,6 +122,43 @@ namespace play_runner {
             return def;
         }
 
+        std::string LogLevelToJsonString(LogLevel level) {
+            switch (level) {
+                case LogLevel::Debug:
+                    return "debug";
+                case LogLevel::Info:
+                    return "info";
+                case LogLevel::Warn:
+                    return "warn";
+                case LogLevel::Error:
+                    return "error";
+            }
+            return "info";
+        }
+
+        std::string MakePathRelativeIfUnderBase(
+            const std::filesystem::path & base,
+            const std::string & raw_path
+        ) {
+            if (raw_path.empty()) {
+                return raw_path;
+            }
+            std::filesystem::path p(raw_path);
+            try {
+                if (!p.is_absolute()) {
+                    return raw_path;
+                }
+                std::filesystem::path relative =
+                    std::filesystem::relative(p, base);
+                if (relative.empty() || relative.is_absolute()) {
+                    return raw_path;
+                }
+                return relative.generic_string();
+            } catch (...) {
+                return raw_path;
+            }
+        }
+
     } // namespace
 
     std::string GetDefaultConfigPath() {
@@ -289,6 +326,92 @@ namespace play_runner {
         config.fail_template.template_path = fail_template_path.string();
 
         return config;
+    }
+
+    bool SaveConfig(const std::string & path, const AppConfig & config) {
+        std::filesystem::path p(path);
+        if (!p.is_absolute()) {
+            p = GetExecutableDirectory() / p;
+        }
+
+        try {
+            if (p.has_parent_path()) {
+                std::filesystem::create_directories(p.parent_path());
+            }
+        } catch (...) {
+        }
+
+        json j;
+
+        j["process_name"] = config.capture.process_name;
+        j["debug"] = config.debug;
+        j["window_title"] = config.capture.window_title;
+        j["crop_top"] = config.capture.crop_top;
+        j["crop_bottom"] = config.capture.crop_bottom;
+        j["crop_left"] = config.capture.crop_left;
+        j["crop_right"] = config.capture.crop_right;
+        j["roi_top_margin"] = config.capture.roi_top_margin;
+        j["roi_bottom_margin"] = config.capture.roi_bottom_margin;
+
+        j["lab_l"] = config.lab.target_l;
+        j["lab_a"] = config.lab.target_a;
+        j["lab_b"] = config.lab.target_b;
+        j["lab_distance_threshold"] = config.lab.distance_threshold;
+        j["lab_weight_l"] = config.lab.weight_l;
+        j["lab_weight_a"] = config.lab.weight_a;
+        j["lab_weight_b"] = config.lab.weight_b;
+
+        j["jump_alpha"] = config.jump.jump_alpha;
+        j["jump_beta"] = config.jump.jump_beta;
+        j["stable_min_frames"] = config.jump.stable_min_frames;
+        j["stable_pos_eps"] = config.jump.stable_pos_eps;
+
+        std::filesystem::path base = GetExecutableDirectory();
+        j["onnx_model_path"] =
+            MakePathRelativeIfUnderBase(base, config.onnx.model_path);
+        j["onnx_input_width"] = config.onnx.input_width;
+        j["onnx_input_height"] = config.onnx.input_height;
+        j["onnx_score_threshold"] = config.onnx.score_threshold;
+        j["onnx_nms_iou_threshold"] = config.onnx.nms_iou_threshold;
+
+        j["enable_monitor_window"] = config.display.enable_monitor_window;
+
+        j["fail_template_path"] = MakePathRelativeIfUnderBase(
+            base,
+            config.fail_template.template_path
+        );
+        j["fail_template_name"] = config.fail_template.template_names;
+        j["fail_match_threshold"] = config.fail_template.match_threshold;
+        j["fail_search_region_x_parts"] =
+            config.fail_template.search_region_x_parts;
+        j["fail_search_region_x_start_part"] =
+            config.fail_template.search_region_x_start_part;
+        j["fail_search_region_x_end_part"] =
+            config.fail_template.search_region_x_end_part;
+        j["fail_search_region_y_parts"] =
+            config.fail_template.search_region_y_parts;
+        j["fail_search_region_y_start_part"] =
+            config.fail_template.search_region_y_start_part;
+        j["fail_search_region_y_end_part"] =
+            config.fail_template.search_region_y_end_part;
+        j["fail_fast_miss_fallback_threshold"] =
+            config.fail_template.fast_miss_fallback_threshold;
+
+        j["log_level"] = LogLevelToJsonString(config.logging.level);
+        j["log_file_path"] =
+            MakePathRelativeIfUnderBase(base, config.logging.file_path);
+
+        try {
+            std::ofstream out(p);
+            if (!out.is_open()) {
+                return false;
+            }
+            out << j.dump(2);
+            out << '\n';
+            return true;
+        } catch (...) {
+            return false;
+        }
     }
 
 } // namespace play_runner
