@@ -14,7 +14,9 @@ namespace play_runner {
             void RightClick();
 
             void LeftLongPress(int duration_ms);
+            void LeftLongPressAt(int x, int y, int duration_ms);
             void RightLongPress(int duration_ms);
+            void RightLongPressAt(int x, int y, int duration_ms);
 
         private:
             void SendMouseEvent(

@@ -15,16 +15,32 @@
 namespace play_runner {
 
     namespace {
+        enum class MouseButton { Left, Right };
+
+        struct LongPressTask {
+                MouseButton button;
+                int x;
+                int y;
+                int duration_ms;
+        };
+
+        void NormalizeToVirtualDesktop(
+            int x,
+            int y,
+            LONG & out_dx,
+            LONG & out_dy
+        );
+
         // 全局持久化跳跃工作线程
         std::thread g_jump_worker_thread;
-        std::queue<int> g_jump_queue;
+        std::queue<LongPressTask> g_jump_queue;
         std::mutex g_jump_mutex;
         std::condition_variable g_jump_cv;
         std::atomic<bool> g_jump_worker_running{true};
 
         void JumpWorkerFunc() {
             while (g_jump_worker_running.load()) {
-                int duration_ms = 0;
+                LongPressTask task{};
                 {
                     std::unique_lock<std::mutex> lock(g_jump_mutex);
                     g_jump_cv.wait(lock, [] {
@@ -37,22 +53,51 @@ namespace play_runner {
                     if (g_jump_queue.empty()) {
                         continue;
                     }
-                    duration_ms = g_jump_queue.front();
+                    task = g_jump_queue.front();
                     g_jump_queue.pop();
                 }
 
                 // 执行跳跃
                 try {
+                    LONG dx = 0;
+                    LONG dy = 0;
+                    NormalizeToVirtualDesktop(task.x, task.y, dx, dy);
+                    {
+                        INPUT move{};
+                        move.type = INPUT_MOUSE;
+                        move.mi.dx = dx;
+                        move.mi.dy = dy;
+                        move.mi.mouseData = 0;
+                        move.mi.dwFlags = MOUSEEVENTF_MOVE |
+                                          MOUSEEVENTF_ABSOLUTE |
+                                          MOUSEEVENTF_VIRTUALDESK;
+                        if (::SendInput(1, &move, sizeof(INPUT)) != 1) {
+                            throw std::runtime_error("SendInput move failed");
+                        }
+                    }
+
+                    const std::uint32_t down_flag =
+                        task.button == MouseButton::Left
+                            ? MOUSEEVENTF_LEFTDOWN
+                            : MOUSEEVENTF_RIGHTDOWN;
+                    const std::uint32_t up_flag =
+                        task.button == MouseButton::Left ? MOUSEEVENTF_LEFTUP
+                                                         : MOUSEEVENTF_RIGHTUP;
+
                     INPUT input{};
                     input.type = INPUT_MOUSE;
                     input.mi.mouseData = 0;
-                    input.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
-                    ::SendInput(1, &input, sizeof(INPUT));
+                    input.mi.dwFlags = down_flag;
+                    if (::SendInput(1, &input, sizeof(INPUT)) != 1) {
+                        throw std::runtime_error("SendInput down failed");
+                    }
                     std::this_thread::sleep_for(
-                        std::chrono::milliseconds(duration_ms)
+                        std::chrono::milliseconds(task.duration_ms)
                     );
-                    input.mi.dwFlags = MOUSEEVENTF_LEFTUP;
-                    ::SendInput(1, &input, sizeof(INPUT));
+                    input.mi.dwFlags = up_flag;
+                    if (::SendInput(1, &input, sizeof(INPUT)) != 1) {
+                        throw std::runtime_error("SendInput up failed");
+                    }
                 } catch (const std::exception & ex) {
                     Logger::Instance().Error(ex.what());
                 }
@@ -162,6 +207,14 @@ namespace play_runner {
     }
 
     void InputControl::LeftLongPress(int duration_ms) {
+        POINT cursor{};
+        if (!::GetCursorPos(&cursor)) {
+            throw std::runtime_error("GetCursorPos failed");
+        }
+        LeftLongPressAt(cursor.x, cursor.y, duration_ms);
+    }
+
+    void InputControl::LeftLongPressAt(int x, int y, int duration_ms) {
         if (duration_ms < 0) {
             throw std::invalid_argument("duration_ms must be non-negative");
         }
@@ -173,12 +226,20 @@ namespace play_runner {
             if (!g_jump_queue.empty()) {
                 return; // 已有跳跃待执行，丢弃本次
             }
-            g_jump_queue.push(duration_ms);
+            g_jump_queue.push({MouseButton::Left, x, y, duration_ms});
         }
         g_jump_cv.notify_one();
     }
 
     void InputControl::RightLongPress(int duration_ms) {
+        POINT cursor{};
+        if (!::GetCursorPos(&cursor)) {
+            throw std::runtime_error("GetCursorPos failed");
+        }
+        RightLongPressAt(cursor.x, cursor.y, duration_ms);
+    }
+
+    void InputControl::RightLongPressAt(int x, int y, int duration_ms) {
         if (duration_ms < 0) {
             throw std::invalid_argument("duration_ms must be non-negative");
         }
@@ -190,7 +251,7 @@ namespace play_runner {
             if (!g_jump_queue.empty()) {
                 return; // 已有跳跃待执行，丢弃本次
             }
-            g_jump_queue.push(duration_ms);
+            g_jump_queue.push({MouseButton::Right, x, y, duration_ms});
         }
         g_jump_cv.notify_one();
     }

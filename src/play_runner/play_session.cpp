@@ -395,9 +395,34 @@ namespace play_runner {
                                                  now.time_since_epoch()
                             )
                                                  .count();
-                            input_control.LeftLongPress(
-                                static_cast<int>(duration)
-                            );
+                            const int roi_top_edge_offset_px = 50;
+                            const int press_y_min_in_cropped = 50;
+                            int press_overlay_x =
+                                frame.window_rect.left + crop_left;
+                            int press_overlay_y =
+                                frame.window_rect.top + crop_top;
+                            int press_x = press_overlay_x + (cropped_w / 2);
+                            int press_y_in_cropped =
+                                roi_y_min - roi_top_edge_offset_px;
+                            if (press_y_in_cropped < press_y_min_in_cropped) {
+                                press_y_in_cropped = press_y_min_in_cropped;
+                            }
+                            if (press_y_in_cropped >= cropped_h) {
+                                press_y_in_cropped = cropped_h - 1;
+                            }
+                            int press_y = press_overlay_y + press_y_in_cropped;
+                            try {
+                                input_control.LeftLongPressAt(
+                                    press_x,
+                                    press_y,
+                                    static_cast<int>(duration)
+                                );
+                            } catch (const std::exception & ex) {
+                                Logger::Instance().Error(
+                                    std::string("Manual jump failed: ") +
+                                    ex.what()
+                                );
+                            }
                             jump_in_progress = false;
                             stable_frames = 0;
                         }
@@ -421,7 +446,32 @@ namespace play_runner {
                         now_seconds - last_jump_time > cooldown) {
                         jump_in_progress = true;
                         last_jump_time = now_seconds;
-                        input_control.LeftLongPress(static_cast<int>(duration));
+                        const int roi_top_edge_offset_px = 50;
+                        const int press_y_min_in_cropped = 50;
+                        int press_overlay_x =
+                            frame.window_rect.left + crop_left;
+                        int press_overlay_y = frame.window_rect.top + crop_top;
+                        int press_x = press_overlay_x + (cropped_w / 2);
+                        int press_y_in_cropped =
+                            roi_y_min - roi_top_edge_offset_px;
+                        if (press_y_in_cropped < press_y_min_in_cropped) {
+                            press_y_in_cropped = press_y_min_in_cropped;
+                        }
+                        if (press_y_in_cropped >= cropped_h) {
+                            press_y_in_cropped = cropped_h - 1;
+                        }
+                        int press_y = press_overlay_y + press_y_in_cropped;
+                        try {
+                            input_control.LeftLongPressAt(
+                                press_x,
+                                press_y,
+                                static_cast<int>(duration)
+                            );
+                        } catch (const std::exception & ex) {
+                            Logger::Instance().Error(
+                                std::string("Auto jump failed: ") + ex.what()
+                            );
+                        }
                         jump_in_progress = false; // 入队即返回，重置标志
                         stable_frames = 0;        // 重置稳定帧数，避免连续触发
                     }
