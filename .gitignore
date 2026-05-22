@@ -3,5 +3,8 @@
 .vscode/
 
 build/
+build*/
 dist/
 third_party/
+tmp/
+python/

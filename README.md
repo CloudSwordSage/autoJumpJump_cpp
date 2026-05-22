@@ -45,7 +45,9 @@ autoJumpJump/
 ├── build/                # 构建输出目录
 ├── dist/                 # 发布目录
 ├── logs/                 # 日志目录
+├── imgui/                # ImGui 库目录
 └── third_party/          # 第三方依赖
+    ├── eigen/            # Eigen 库
     ├── onnxruntime/      # ONNX Runtime
     ├── opencv/           # OpenCV
     └── nlohmann/         # JSON 库
@@ -56,7 +58,7 @@ autoJumpJump/
 ### 前置要求
 
 - Windows 10/11
-- **MSYS2** (推荐) - 提供 MinGW-w64 工具链和 Unix 工具
+- **MSYS2** - 提供 MinGW-w64 工具链和 Unix 工具
 - CMake 3.20 或更高版本
 - Git
 
@@ -79,6 +81,7 @@ cd scripts
 
 或者手动准备 `third_party/` 目录，确保包含以下依赖：
 
+- Eigen 库 (包含头文件)
 - ONNX Runtime (包含头文件、DLL 和库文件)
 - OpenCV 4.13.0 (MinGW 静态库)
 - nlohmann/json 头文件
@@ -109,73 +112,6 @@ cd dist
 ./cpp-play-runner.exe
 ```
 
-### 配置说明
-
-编辑 `config/play_runner.json` 文件以自定义行为：
-
-```json
-{
-  "process_name": "跳一跳",              // 目标游戏进程名
-  "debug": false,                        // 性能统计模式
-  "window_title": "Real-time Monitor",   // 监控窗口标题
-
-  // 屏幕裁剪区域
-  "crop_top": 10,
-  "crop_bottom": 10,
-  "crop_left": 10,
-  "crop_right": 10,
-
-  // ROI 区域设置
-  "roi_top_margin": 250,
-  "roi_bottom_margin": 100,
-
-  // LAB 颜色参数
-  "lab_l": 63,
-  "lab_a": 141,
-  "lab_b": 109,
-  "lab_distance_threshold": 15,
-
-  // 跳跃力度参数
-  "jump_alpha": 2.185,
-  "jump_beta": 0.0,
-
-  // YOLO 模型配置
-  "onnx_model_path": "models/yolo11n_last.onnx",
-  "onnx_input_width": 640,
-  "onnx_input_height": 640,
-  "onnx_score_threshold": 0.25,
-  "onnx_nms_iou_threshold": 0.45,
-
-  // 监控窗口
-  "enable_monitor_window": true,
-
-  // Fail 模板匹配配置
-  "fail_template_path": "fail/fail.png",
-  "fail_match_threshold": 0.8,
-  "fail_search_region_top_ratio": 3,
-  "fail_search_region_left_ratio": 3,
-
-  // 日志配置
-  "log_level": "info",
-  "log_file_path": "logs/cpp_play_runner.log"
-}
-```
-
-### 主要参数说明
-
-| 参数                           | 说明                                     |
-| ------------------------------ | ---------------------------------------- |
-| `process_name`                 | 目标游戏窗口/进程名称                    |
-| `debug`                        | 开启性能统计模式                         |
-| `enable_monitor_window`        | 是否启用实时监控窗口（遮盖层显示）       |
-| `jump_alpha`                   | 跳跃力度系数，影响跳跃距离计算           |
-| `lab_*`                        | LAB 颜色空间参数，用于图像分割           |
-| `onnx_*`                       | YOLO 模型推理参数                        |
-| `fail_template_path`           | Fail 提示模板图片路径                    |
-| `fail_match_threshold`         | 模板匹配阈值 (0-1)，越高越严格           |
-| `fail_search_region_top_ratio` | 搜索区域比例，3 表示仅在下边 1/3 区域搜索  |
-| `fail_search_region_left_ratio`| 左侧搜索区域比例，3 表示仅在左侧 1/3 区域  |
-
 ## 工作原理
 
 1. **屏幕捕获** - 实时捕获游戏窗口画面
@@ -195,7 +131,8 @@ cd dist
 
 ## 致谢
 
-- [ONNX Runtime](https://onnxruntime.ai/) - 高性能推理引擎
+- [Eigen](https://eigen.tuxfamily.org/index.php?title=Main_Page) - 数值计算库
+- [Imgui](https://imgui.org/) - GUI 库
 - [OpenCV](https://opencv.org/) - 开源计算机视觉库
 - [YOLO](https://github.com/ultralytics/ultralytics) - 实时目标检测算法
 - [nlohmann/json](https://github.com/nlohmann/json) - C++ JSON 库
