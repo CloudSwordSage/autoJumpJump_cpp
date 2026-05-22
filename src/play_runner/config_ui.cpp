@@ -143,7 +143,8 @@ namespace play_runner {
           category_(Category::Global),
           working_config_(LoadConfigOrDefault(config_path_)),
           last_frame_seq_(0), last_log_seq_(0), frame_texture_(0),
-          frame_texture_w_(0), frame_texture_h_(0), auto_scroll_logs_(true),
+          frame_texture_w_(0), frame_texture_h_(0),
+          right_preview_column_width_(360.0f), auto_scroll_logs_(true),
           selected_font_index_(0), font_size_px_(20.0f), font_dirty_(true),
           open_success_popup_(false), success_popup_message_("") {
         last_log_seq_ = Logger::Instance().GetLastSeq();
@@ -340,7 +341,41 @@ namespace play_runner {
         ImVec2 avail = ImGui::GetContentRegionAvail();
         float top_height = std::max(100.0f, avail.y - log_height - 8.0f);
 
-        ImGui::BeginChild("##top", ImVec2(0, top_height), false);
+        ImGui::BeginChild(
+            "##top",
+            ImVec2(0, top_height),
+            false,
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+        );
+        {
+            ImVec2 top_avail = ImGui::GetContentRegionAvail();
+            if (frame_texture_ != 0 && frame_texture_w_ > 0 &&
+                frame_texture_h_ > 0) {
+                const ImGuiStyle & style = ImGui::GetStyle();
+
+                float cell_h = std::max(1.0f, top_avail.y);
+                float image_h = cell_h - style.CellPadding.y * 2.0f -
+                                style.WindowPadding.y * 2.0f -
+                                style.ChildBorderSize * 2.0f;
+                image_h = std::max(1.0f, image_h);
+
+                float scale = image_h / static_cast<float>(frame_texture_h_);
+                scale = std::max(0.01f, scale);
+                float image_w = static_cast<float>(frame_texture_w_) * scale;
+
+                float desired = image_w + style.CellPadding.x * 2.0f +
+                                style.WindowPadding.x * 2.0f +
+                                style.ChildBorderSize * 2.0f;
+
+                float total_w = std::max(1.0f, top_avail.x);
+                float min_center_w = 420.0f;
+                float max_allowed =
+                    std::max(200.0f, total_w - 160.0f - min_center_w);
+                desired = std::clamp(desired, 200.0f, max_allowed);
+                right_preview_column_width_ = desired;
+            }
+        }
+
         if (ImGui::BeginTable("##layout", 3, ImGuiTableFlags_Resizable)) {
             ImGui::TableSetupColumn(
                 "##left",
@@ -354,8 +389,9 @@ namespace play_runner {
             );
             ImGui::TableSetupColumn(
                 "##right",
-                ImGuiTableColumnFlags_WidthStretch,
-                0.0f
+                ImGuiTableColumnFlags_WidthFixed |
+                    ImGuiTableColumnFlags_NoResize,
+                right_preview_column_width_
             );
 
             ImGui::TableNextRow();
@@ -733,7 +769,12 @@ namespace play_runner {
     }
 
     void ConfigUi::DrawRightPreview() {
-        ImGui::BeginChild("##preview", ImVec2(0, 0), true);
+        ImGui::BeginChild(
+            "##preview",
+            ImVec2(0, 0),
+            true,
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+        );
         UiFrameSnapshot frame = ui_state_->GetFrameSnapshot();
 
         if (frame_texture_ == 0 || frame.width <= 0 || frame.height <= 0 ||
@@ -747,11 +788,13 @@ namespace play_runner {
         ImVec2 avail = ImGui::GetContentRegionAvail();
         float iw = static_cast<float>(frame_texture_w_);
         float ih = static_cast<float>(frame_texture_h_);
-        float scale = std::min(avail.x / iw, avail.y / ih);
+        float scale = std::max(0.01f, avail.y / ih);
+        if (iw * scale > avail.x) {
+            scale = std::max(0.01f, avail.x / iw);
+        }
         scale = std::max(0.01f, scale);
         ImVec2 size(iw * scale, ih * scale);
 
-        ImGui::Text("frame: %dx%d", frame_texture_w_, frame_texture_h_);
         ImGui::Image(
             static_cast<ImTextureID>(
                 static_cast<std::uintptr_t>(frame_texture_)

@@ -51,6 +51,7 @@ namespace play_runner {
             unsigned int frame_texture_;
             int frame_texture_w_;
             int frame_texture_h_;
+            float right_preview_column_width_;
             std::vector<std::uint8_t> frame_rgba_;
             std::vector<Logger::Entry> log_entries_;
 
