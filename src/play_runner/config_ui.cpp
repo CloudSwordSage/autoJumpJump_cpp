@@ -417,6 +417,8 @@ namespace play_runner {
             );
 
             ImGui::Checkbox("调试", &working_config_.debug);
+            ImGui::SameLine();
+            ImGui::Checkbox("自动重启", &working_config_.auto_restart);
             ImGui::Checkbox(
                 "启用监控窗口",
                 &working_config_.display.enable_monitor_window

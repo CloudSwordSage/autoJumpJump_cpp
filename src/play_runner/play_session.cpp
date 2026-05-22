@@ -12,6 +12,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <exception>
 #include <memory>
 #include <string>
 #include <thread>
@@ -52,6 +53,8 @@ namespace play_runner {
                        b.fast_miss_fallback_threshold;
         }
 
+        constexpr double AUTO_RESTART_COOLDOWN_SECONDS = 1.0;
+
     } // namespace
 
     PlaySession::PlaySession(
@@ -87,6 +90,10 @@ namespace play_runner {
 
         bool jump_in_progress = false;
         double last_jump_time = 0.0;
+
+        bool prev_fail_detected = false;
+        bool prev_auto_jump_enabled = false;
+        double last_auto_restart_time = -1e9;
 
         int frame_count = 0;
         double fps = 0.0;
@@ -309,6 +316,41 @@ namespace play_runner {
                     last_foot_y = -1;
                     jump_in_progress = false;
                 }
+
+                bool auto_jump_now = auto_jump_enabled.load();
+                bool auto_jump_rising =
+                    auto_jump_now && !prev_auto_jump_enabled;
+                if (auto_jump_now && config.auto_restart &&
+                    fail_detection.detected &&
+                    fail_detection.match.match_x >= 0 &&
+                    fail_detection.match.match_y >= 0) {
+                    auto restart_now = std::chrono::steady_clock::now();
+                    double now_seconds = std::chrono::duration<double>(
+                                             restart_now.time_since_epoch()
+                    )
+                                             .count();
+                    if ((auto_jump_rising || !prev_fail_detected) &&
+                        now_seconds - last_auto_restart_time >=
+                            AUTO_RESTART_COOLDOWN_SECONDS) {
+                        int overlay_x = frame.window_rect.left + crop_left;
+                        int overlay_y = frame.window_rect.top + crop_top;
+                        int click_x = overlay_x + fail_detection.match.match_x +
+                                      (fail_detection.template_width / 2);
+                        int click_y = overlay_y + fail_detection.match.match_y +
+                                      (fail_detection.template_height / 2);
+                        try {
+                            input_control.MoveMouseAbsolute(click_x, click_y);
+                            input_control.LeftClick();
+                            last_auto_restart_time = now_seconds;
+                        } catch (const std::exception & ex) {
+                            Logger::Instance().Error(
+                                std::string("Auto restart failed: ") + ex.what()
+                            );
+                        }
+                    }
+                }
+                prev_fail_detected = fail_detection.detected;
+                prev_auto_jump_enabled = auto_jump_now;
 
                 frame_count += 1;
                 auto now = std::chrono::steady_clock::now();

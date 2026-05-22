@@ -29,6 +29,7 @@
   "onnx_nms_iou_threshold": 0.45,
 
   "enable_monitor_window": true,
+  "auto_restart": false,
 
   "fail_template_path": "fail",
   "fail_template_name":["fail_1.png","fail_2.png"],

@@ -79,6 +79,7 @@ namespace play_runner {
             config.logging.level = LogLevel::Info;
             config.logging.file_path = "logs/cpp_play_runner.log";
 
+            config.auto_restart = false;
             config.debug = false;
 
             return config;
@@ -302,6 +303,7 @@ namespace play_runner {
             ParseLogLevelJson(j, "log_level", config.logging.level);
         AssignIfPresent(j, "log_file_path", config.logging.file_path);
 
+        AssignIfPresent(j, "auto_restart", config.auto_restart);
         AssignIfPresent(j, "debug", config.debug);
 
         std::filesystem::path base = GetExecutableDirectory();
@@ -401,6 +403,7 @@ namespace play_runner {
         j["log_file_path"] =
             MakePathRelativeIfUnderBase(base, config.logging.file_path);
 
+        j["auto_restart"] = config.auto_restart;
         try {
             std::ofstream out(p);
             if (!out.is_open()) {

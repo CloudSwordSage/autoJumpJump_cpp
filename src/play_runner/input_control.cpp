@@ -28,7 +28,8 @@ namespace play_runner {
                 {
                     std::unique_lock<std::mutex> lock(g_jump_mutex);
                     g_jump_cv.wait(lock, [] {
-                        return !g_jump_queue.empty() || !g_jump_worker_running.load();
+                        return !g_jump_queue.empty() ||
+                               !g_jump_worker_running.load();
                     });
                     if (!g_jump_worker_running.load() && g_jump_queue.empty()) {
                         return;
@@ -47,7 +48,9 @@ namespace play_runner {
                     input.mi.mouseData = 0;
                     input.mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
                     ::SendInput(1, &input, sizeof(INPUT));
-                    std::this_thread::sleep_for(std::chrono::milliseconds(duration_ms));
+                    std::this_thread::sleep_for(
+                        std::chrono::milliseconds(duration_ms)
+                    );
                     input.mi.dwFlags = MOUSEEVENTF_LEFTUP;
                     ::SendInput(1, &input, sizeof(INPUT));
                 } catch (const std::exception & ex) {

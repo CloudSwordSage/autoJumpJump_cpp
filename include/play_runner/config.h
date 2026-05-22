@@ -73,6 +73,7 @@ namespace play_runner {
             FailTemplateConfig fail_template;
             DisplayConfig display;
             LoggingConfig logging;
+            bool auto_restart;
             bool debug;
     };
 
