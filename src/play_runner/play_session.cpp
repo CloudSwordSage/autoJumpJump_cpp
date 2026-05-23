@@ -227,7 +227,8 @@ namespace play_runner {
             monitor_title = "Real-time Monitor";
         }
         double monitor_scale = 1.0;
-        InitDebugWindow(monitor_title, monitor_enabled, monitor_scale);
+        InitDebugWindow(monitor_title, true, monitor_scale);
+        SetOverlayVisible(monitor_enabled);
 
         std::thread worker([&]() {
             struct PendingJumpSample {
@@ -254,6 +255,7 @@ namespace play_runner {
                     ui_state_->SetTargetWindowFound(false);
                     window_lost.store(true);
                     session_stop.store(true);
+                    SetOverlayVisible(false);
                     break;
                 }
 
@@ -293,7 +295,6 @@ namespace play_runner {
                     if (monitor_title.empty()) {
                         monitor_title = "Real-time Monitor";
                     }
-                    InitDebugWindow(monitor_title, true, monitor_scale);
                 } else if (!config.display.enable_monitor_window &&
                            monitor_enabled) {
                     monitor_enabled = false;
@@ -904,6 +905,8 @@ namespace play_runner {
         if (worker.joinable()) {
             worker.join();
         }
+
+        ShutdownDebugWindow();
 
         if (window_lost.load()) {
             return 1;

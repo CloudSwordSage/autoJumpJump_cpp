@@ -3,6 +3,7 @@
 #include "play_runner/config.h"
 #include "play_runner/config_ui.h"
 #include "play_runner/config_ui_state.h"
+#include "play_runner/debug_draw.h"
 #include "play_runner/internal/play_session.h"
 #include "play_runner/logging.h"
 #include "play_runner/screen_capture.h"
@@ -137,6 +138,7 @@ namespace play_runner {
 
                 if (result == 1) {
                     Logger::Instance().Warn("游戏窗口已消失，回退到等待窗口");
+                    ShutdownDebugWindow();
                     has_last_process_running = false;
                     continue;
                 }

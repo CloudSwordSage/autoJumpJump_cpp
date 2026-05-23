@@ -425,10 +425,6 @@ namespace play_runner {
         double & out_scale
     ) {
         out_scale = 1.0;
-        if (!enabled) {
-            return;
-        }
-
         HDC hdc = GetDC(nullptr);
         if (hdc) {
             int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
@@ -442,6 +438,7 @@ namespace play_runner {
         }
 
         EnsureOverlayWindow(title);
+        SetOverlayVisible(enabled);
     }
 
     void SetOverlayVisible(bool visible) {
@@ -449,6 +446,85 @@ namespace play_runner {
             return;
         }
         ShowWindow(g_overlay_hwnd, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
+    }
+
+    void ShutdownDebugWindow() {
+        if (g_overlay_hwnd && ::IsWindow(g_overlay_hwnd)) {
+            ShowWindow(g_overlay_hwnd, SW_HIDE);
+            DWORD overlay_thread =
+                ::GetWindowThreadProcessId(g_overlay_hwnd, nullptr);
+            DWORD cur_thread = ::GetCurrentThreadId();
+            if (overlay_thread == cur_thread) {
+                DestroyWindow(g_overlay_hwnd);
+            } else {
+                PostMessageW(g_overlay_hwnd, WM_CLOSE, 0, 0);
+            }
+        }
+        g_overlay_hwnd = nullptr;
+
+        if (g_overlay_mem_dc && g_overlay_old_bmp) {
+            SelectObject(g_overlay_mem_dc, g_overlay_old_bmp);
+            g_overlay_old_bmp = nullptr;
+        }
+
+        if (g_overlay_bmp) {
+            DeleteObject(g_overlay_bmp);
+            g_overlay_bmp = nullptr;
+        }
+
+        if (g_overlay_mem_dc) {
+            DeleteDC(g_overlay_mem_dc);
+            g_overlay_mem_dc = nullptr;
+        }
+
+        g_overlay_width = 0;
+        g_overlay_height = 0;
+        g_overlay_bits = nullptr;
+
+        if (g_pen_roi) {
+            DeleteObject(g_pen_roi);
+            g_pen_roi = nullptr;
+        }
+        if (g_pen_body) {
+            DeleteObject(g_pen_body);
+            g_pen_body = nullptr;
+        }
+        if (g_pen_foot) {
+            DeleteObject(g_pen_foot);
+            g_pen_foot = nullptr;
+        }
+        if (g_pen_platform) {
+            DeleteObject(g_pen_platform);
+            g_pen_platform = nullptr;
+        }
+        if (g_pen_target_rect) {
+            DeleteObject(g_pen_target_rect);
+            g_pen_target_rect = nullptr;
+        }
+        if (g_pen_target_center) {
+            DeleteObject(g_pen_target_center);
+            g_pen_target_center = nullptr;
+        }
+        if (g_pen_target_line) {
+            DeleteObject(g_pen_target_line);
+            g_pen_target_line = nullptr;
+        }
+        if (g_pen_candidates) {
+            DeleteObject(g_pen_candidates);
+            g_pen_candidates = nullptr;
+        }
+        if (g_pen_fail) {
+            DeleteObject(g_pen_fail);
+            g_pen_fail = nullptr;
+        }
+        if (g_brush_foot) {
+            DeleteObject(g_brush_foot);
+            g_brush_foot = nullptr;
+        }
+        if (g_brush_target_center) {
+            DeleteObject(g_brush_target_center);
+            g_brush_target_center = nullptr;
+        }
     }
 
     void RenderDebugFrame(
@@ -481,11 +557,9 @@ namespace play_runner {
         if (!enabled) {
             return;
         }
-        if (!g_overlay_hwnd) {
-            EnsureOverlayWindow("Overlay");
-            if (!g_overlay_hwnd) {
-                return;
-            }
+        if (!g_overlay_hwnd || !::IsWindow(g_overlay_hwnd)) {
+            g_overlay_hwnd = nullptr;
+            return;
         }
         if (cropped_w <= 0 || cropped_h <= 0) {
             return;
@@ -590,7 +664,8 @@ namespace play_runner {
             cropped_h,
             "ESC/Q:Quit | S:Start Auto | D:Stop Auto | SPACE:Jump | P:Capture"
         );
-        if (fail_detected && fail_x >= 0 && fail_y >= 0 && fail_w > 0 && fail_h > 0) {
+        if (fail_detected && fail_x >= 0 && fail_y >= 0 && fail_w > 0 &&
+            fail_h > 0) {
             DrawFailDetected(hdc, fail_x, fail_y, fail_w, fail_h);
         }
 

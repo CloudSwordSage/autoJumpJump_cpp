@@ -18,6 +18,8 @@ namespace play_runner {
 
     void SetOverlayVisible(bool visible);
 
+    void ShutdownDebugWindow();
+
     void RenderDebugFrame(
         bool enabled,
         const std::string & title,
