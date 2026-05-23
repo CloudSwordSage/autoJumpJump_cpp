@@ -227,10 +227,11 @@ namespace play_runner {
             monitor_title = "Real-time Monitor";
         }
         double monitor_scale = 1.0;
-        InitDebugWindow(monitor_title, true, monitor_scale);
-        SetOverlayVisible(monitor_enabled);
 
         std::thread worker([&]() {
+            MSG msg;
+            PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
+
             struct PendingJumpSample {
                     bool active = false;
                     bool wait_press_done = false;
@@ -249,13 +250,22 @@ namespace play_runner {
             HWND hwnd = reinterpret_cast<HWND>(
                 reinterpret_cast<void *>(window_.handle)
             );
+
+            InitDebugWindow(monitor_title, monitor_enabled, monitor_scale);
+            SetOverlayVisible(monitor_enabled);
+
             ui_state_->SetTargetWindowFound(true);
             while (!exit_requested.load() && !session_stop.load()) {
+                while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {
+                    TranslateMessage(&msg);
+                    DispatchMessage(&msg);
+                }
+
                 if (!::IsWindow(hwnd)) {
                     ui_state_->SetTargetWindowFound(false);
                     window_lost.store(true);
                     session_stop.store(true);
-                    SetOverlayVisible(false);
+                    ShutdownDebugWindow();
                     break;
                 }
 
@@ -295,10 +305,12 @@ namespace play_runner {
                     if (monitor_title.empty()) {
                         monitor_title = "Real-time Monitor";
                     }
+                    InitDebugWindow(monitor_title, true, monitor_scale);
+                    SetOverlayVisible(true);
                 } else if (!config.display.enable_monitor_window &&
                            monitor_enabled) {
                     monitor_enabled = false;
-                    SetOverlayVisible(false);
+                    ShutdownDebugWindow();
                 } else if (monitor_title != config.capture.window_title &&
                            config.display.enable_monitor_window) {
                     monitor_title = config.capture.window_title;
@@ -847,6 +859,8 @@ namespace play_runner {
                     break;
                 }
             }
+
+            ShutdownDebugWindow();
         });
 
         bool prev_ctrl_s = false;

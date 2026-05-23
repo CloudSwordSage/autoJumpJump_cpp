@@ -12,6 +12,7 @@ namespace play_runner {
         const COLORREF kColorKey = RGB(1, 0, 1);
 
         HWND g_overlay_hwnd = nullptr;
+        DWORD g_overlay_thread_id = 0;
         HDC g_overlay_mem_dc = nullptr;
         HBITMAP g_overlay_bmp = nullptr;
         HBITMAP g_overlay_old_bmp = nullptr;
@@ -30,6 +31,24 @@ namespace play_runner {
         HPEN g_pen_fail = nullptr;
         HBRUSH g_brush_foot = nullptr;
         HBRUSH g_brush_target_center = nullptr;
+
+        LRESULT CALLBACK
+        OverlayWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
+            switch (msg) {
+                case WM_CLOSE:
+                    DestroyWindow(hwnd);
+                    return 0;
+                case WM_NCDESTROY:
+                    if (hwnd == g_overlay_hwnd) {
+                        g_overlay_hwnd = nullptr;
+                        g_overlay_thread_id = 0;
+                    }
+                    break;
+                default:
+                    break;
+            }
+            return DefWindowProcW(hwnd, msg, wparam, lparam);
+        }
 
         void Utf8ToWide(const std::string & src, std::wstring & dst) {
             if (src.empty()) {
@@ -60,21 +79,31 @@ namespace play_runner {
         }
 
         void EnsureOverlayWindow(const std::string & title) {
-            if (g_overlay_hwnd) {
+            if (g_overlay_hwnd && ::IsWindow(g_overlay_hwnd)) {
                 return;
             }
+            g_overlay_hwnd = nullptr;
+            g_overlay_thread_id = 0;
 
             WNDCLASSEXW wc{};
             wc.cbSize = sizeof(WNDCLASSEXW);
             wc.style = CS_HREDRAW | CS_VREDRAW;
-            wc.lpfnWndProc = DefWindowProcW;
+            wc.lpfnWndProc = OverlayWndProc;
             wc.hInstance = GetModuleHandleW(nullptr);
             wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
             wc.hbrBackground = nullptr;
             wc.lpszClassName = L"AutoJumpOverlayWindow";
 
-            static ATOM atom = RegisterClassExW(&wc);
-            if (!atom) {
+            static bool class_ready = false;
+            static bool class_attempted = false;
+            if (!class_attempted) {
+                ATOM atom = RegisterClassExW(&wc);
+                if (atom || GetLastError() == ERROR_CLASS_ALREADY_EXISTS) {
+                    class_ready = true;
+                }
+                class_attempted = true;
+            }
+            if (!class_ready) {
                 return;
             }
 
@@ -98,6 +127,7 @@ namespace play_runner {
             if (!g_overlay_hwnd) {
                 return;
             }
+            g_overlay_thread_id = ::GetCurrentThreadId();
 
             ShowWindow(g_overlay_hwnd, SW_SHOW);
             SetWindowPos(
@@ -109,6 +139,72 @@ namespace play_runner {
                 0,
                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
             );
+        }
+
+        void CleanupOverlayResources() {
+            if (g_overlay_mem_dc && g_overlay_old_bmp) {
+                SelectObject(g_overlay_mem_dc, g_overlay_old_bmp);
+                g_overlay_old_bmp = nullptr;
+            }
+
+            if (g_overlay_bmp) {
+                DeleteObject(g_overlay_bmp);
+                g_overlay_bmp = nullptr;
+            }
+
+            if (g_overlay_mem_dc) {
+                DeleteDC(g_overlay_mem_dc);
+                g_overlay_mem_dc = nullptr;
+            }
+
+            g_overlay_width = 0;
+            g_overlay_height = 0;
+            g_overlay_bits = nullptr;
+
+            if (g_pen_roi) {
+                DeleteObject(g_pen_roi);
+                g_pen_roi = nullptr;
+            }
+            if (g_pen_body) {
+                DeleteObject(g_pen_body);
+                g_pen_body = nullptr;
+            }
+            if (g_pen_foot) {
+                DeleteObject(g_pen_foot);
+                g_pen_foot = nullptr;
+            }
+            if (g_pen_platform) {
+                DeleteObject(g_pen_platform);
+                g_pen_platform = nullptr;
+            }
+            if (g_pen_target_rect) {
+                DeleteObject(g_pen_target_rect);
+                g_pen_target_rect = nullptr;
+            }
+            if (g_pen_target_center) {
+                DeleteObject(g_pen_target_center);
+                g_pen_target_center = nullptr;
+            }
+            if (g_pen_target_line) {
+                DeleteObject(g_pen_target_line);
+                g_pen_target_line = nullptr;
+            }
+            if (g_pen_candidates) {
+                DeleteObject(g_pen_candidates);
+                g_pen_candidates = nullptr;
+            }
+            if (g_pen_fail) {
+                DeleteObject(g_pen_fail);
+                g_pen_fail = nullptr;
+            }
+            if (g_brush_foot) {
+                DeleteObject(g_brush_foot);
+                g_brush_foot = nullptr;
+            }
+            if (g_brush_target_center) {
+                DeleteObject(g_brush_target_center);
+                g_brush_target_center = nullptr;
+            }
         }
 
         void EnsureGdiObjects() {
@@ -425,6 +521,9 @@ namespace play_runner {
         double & out_scale
     ) {
         out_scale = 1.0;
+        if (!enabled) {
+            return;
+        }
         HDC hdc = GetDC(nullptr);
         if (hdc) {
             int dpi = GetDeviceCaps(hdc, LOGPIXELSX);
@@ -438,93 +537,42 @@ namespace play_runner {
         }
 
         EnsureOverlayWindow(title);
-        SetOverlayVisible(enabled);
     }
 
     void SetOverlayVisible(bool visible) {
-        if (!g_overlay_hwnd) {
+        if (!g_overlay_hwnd || !::IsWindow(g_overlay_hwnd)) {
+            g_overlay_hwnd = nullptr;
+            g_overlay_thread_id = 0;
             return;
         }
         ShowWindow(g_overlay_hwnd, visible ? SW_SHOWNOACTIVATE : SW_HIDE);
     }
 
     void ShutdownDebugWindow() {
-        if (g_overlay_hwnd && ::IsWindow(g_overlay_hwnd)) {
-            ShowWindow(g_overlay_hwnd, SW_HIDE);
-            DWORD overlay_thread =
+        if (!g_overlay_hwnd || !::IsWindow(g_overlay_hwnd)) {
+            g_overlay_hwnd = nullptr;
+            g_overlay_thread_id = 0;
+            CleanupOverlayResources();
+            return;
+        }
+
+        DWORD overlay_thread = g_overlay_thread_id;
+        if (overlay_thread == 0) {
+            overlay_thread =
                 ::GetWindowThreadProcessId(g_overlay_hwnd, nullptr);
-            DWORD cur_thread = ::GetCurrentThreadId();
-            if (overlay_thread == cur_thread) {
-                DestroyWindow(g_overlay_hwnd);
-            } else {
-                PostMessageW(g_overlay_hwnd, WM_CLOSE, 0, 0);
-            }
-        }
-        g_overlay_hwnd = nullptr;
-
-        if (g_overlay_mem_dc && g_overlay_old_bmp) {
-            SelectObject(g_overlay_mem_dc, g_overlay_old_bmp);
-            g_overlay_old_bmp = nullptr;
         }
 
-        if (g_overlay_bmp) {
-            DeleteObject(g_overlay_bmp);
-            g_overlay_bmp = nullptr;
+        DWORD cur_thread = ::GetCurrentThreadId();
+        if (overlay_thread == cur_thread) {
+            ShowWindow(g_overlay_hwnd, SW_HIDE);
+            DestroyWindow(g_overlay_hwnd);
+            g_overlay_hwnd = nullptr;
+            g_overlay_thread_id = 0;
+            CleanupOverlayResources();
+            return;
         }
 
-        if (g_overlay_mem_dc) {
-            DeleteDC(g_overlay_mem_dc);
-            g_overlay_mem_dc = nullptr;
-        }
-
-        g_overlay_width = 0;
-        g_overlay_height = 0;
-        g_overlay_bits = nullptr;
-
-        if (g_pen_roi) {
-            DeleteObject(g_pen_roi);
-            g_pen_roi = nullptr;
-        }
-        if (g_pen_body) {
-            DeleteObject(g_pen_body);
-            g_pen_body = nullptr;
-        }
-        if (g_pen_foot) {
-            DeleteObject(g_pen_foot);
-            g_pen_foot = nullptr;
-        }
-        if (g_pen_platform) {
-            DeleteObject(g_pen_platform);
-            g_pen_platform = nullptr;
-        }
-        if (g_pen_target_rect) {
-            DeleteObject(g_pen_target_rect);
-            g_pen_target_rect = nullptr;
-        }
-        if (g_pen_target_center) {
-            DeleteObject(g_pen_target_center);
-            g_pen_target_center = nullptr;
-        }
-        if (g_pen_target_line) {
-            DeleteObject(g_pen_target_line);
-            g_pen_target_line = nullptr;
-        }
-        if (g_pen_candidates) {
-            DeleteObject(g_pen_candidates);
-            g_pen_candidates = nullptr;
-        }
-        if (g_pen_fail) {
-            DeleteObject(g_pen_fail);
-            g_pen_fail = nullptr;
-        }
-        if (g_brush_foot) {
-            DeleteObject(g_brush_foot);
-            g_brush_foot = nullptr;
-        }
-        if (g_brush_target_center) {
-            DeleteObject(g_brush_target_center);
-            g_brush_target_center = nullptr;
-        }
+        PostMessageW(g_overlay_hwnd, WM_CLOSE, 0, 0);
     }
 
     void RenderDebugFrame(
@@ -559,7 +607,11 @@ namespace play_runner {
         }
         if (!g_overlay_hwnd || !::IsWindow(g_overlay_hwnd)) {
             g_overlay_hwnd = nullptr;
-            return;
+            g_overlay_thread_id = 0;
+            EnsureOverlayWindow(title.empty() ? "Overlay" : title);
+            if (!g_overlay_hwnd) {
+                return;
+            }
         }
         if (cropped_w <= 0 || cropped_h <= 0) {
             return;
