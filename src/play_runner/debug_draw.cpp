@@ -662,7 +662,8 @@ namespace play_runner {
         DrawControls(
             hdc,
             cropped_h,
-            "ESC/Q:Quit | S:Start Auto | D:Stop Auto | SPACE:Jump | P:Capture"
+            "Ctrl+S:Start Auto | Ctrl+D:Stop Auto | SPACE:Jump | Ctrl+Q:Export "
+            "CSV"
         );
         if (fail_detected && fail_x >= 0 && fail_y >= 0 && fail_w > 0 &&
             fail_h > 0) {
