@@ -57,9 +57,9 @@ namespace play_runner {
                 }
             }
 
-            bool last_process_running = false;
-            bool has_last_process_running = false;
-            std::string last_target;
+            bool last_window_found = false;
+            bool has_last_window_found = false;
+            std::string last_have_title_name;
 
             int final_result = 0;
             while (!ui_state_->exit_requested.load()) {
@@ -69,18 +69,21 @@ namespace play_runner {
                 while (!ui_state_->exit_requested.load()) {
                     AppConfig config = ui_state_->GetConfigSnapshot();
 
-                    const std::string & target = config.capture.process_name;
-                    if (target != last_target) {
-                        last_target = target;
-                        has_last_process_running = false;
+                    const std::string & have_title_name =
+                        config.capture.have_title_name;
+                    if (have_title_name != last_have_title_name) {
+                        last_have_title_name = have_title_name;
+                        has_last_window_found = false;
                     }
 
-                    if (target.empty()) {
+                    if (have_title_name.empty()) {
                         ui_state_->SetTargetWindowFound(false);
-                        if (!has_last_process_running) {
-                            Logger::Instance().Warn("进程名为空，无法查找窗口");
-                            has_last_process_running = true;
-                            last_process_running = false;
+                        if (!has_last_window_found) {
+                            Logger::Instance().Warn(
+                                "窗口标题关键字为空，无法查找目标窗口"
+                            );
+                            has_last_window_found = true;
+                            last_window_found = false;
                         }
                         std::this_thread::sleep_for(
                             std::chrono::milliseconds(500)
@@ -89,38 +92,27 @@ namespace play_runner {
                     }
 
                     bool found = false;
-                    found = FindWindow(target, "", window);
-                    if (!found) {
-                        found = FindWindow("", target, window);
-                    }
+                    found = FindWindowByTitleRules(
+                        have_title_name,
+                        config.capture.skip_title_names,
+                        window
+                    );
                     ui_state_->SetTargetWindowFound(found);
                     if (found) {
                         break;
                     }
 
-                    bool process_running = false;
-                    process_running = IsProcessRunning(target);
-
-                    if (!process_running) {
-                        if (!has_last_process_running || last_process_running) {
-                            Logger::Instance().Warn(
-                                "未找到进程: " + target + "，等待进程打开"
-                            );
-                        }
-                    } else if (!has_last_process_running ||
-                               !last_process_running) {
-                        Logger::Instance().Info(
-                            "进程已打开: " + target + "，开始轮询窗口"
+                    if (!has_last_window_found || last_window_found) {
+                        Logger::Instance().Warn(
+                            "未找到标题包含 \"" + have_title_name +
+                            "\" 的窗口，继续轮询"
                         );
                     }
 
-                    last_process_running = process_running;
-                    has_last_process_running = true;
+                    last_window_found = false;
+                    has_last_window_found = true;
 
-                    int sleep_ms = process_running ? 200 : 500;
-                    std::this_thread::sleep_for(
-                        std::chrono::milliseconds(sleep_ms)
-                    );
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
                 }
 
                 if (ui_state_->exit_requested.load()) {
@@ -137,7 +129,7 @@ namespace play_runner {
 
                 if (result == 1) {
                     Logger::Instance().Warn("游戏窗口已消失，回退到等待窗口");
-                    has_last_process_running = false;
+                    has_last_window_found = false;
                     continue;
                 }
 

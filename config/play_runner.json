@@ -1,5 +1,6 @@
 {
-  "process_name": "跳一跳",
+  "have_title_name": "跳一跳",
+  "skip_title_names": ["Edge"],
   "debug": false,
   "window_title": "Real-time Monitor",
   "crop_top": 10,

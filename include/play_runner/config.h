@@ -24,7 +24,8 @@ namespace play_runner {
     };
 
     struct CaptureConfig {
-            std::string process_name;
+            std::string have_title_name;
+            std::vector<std::string> skip_title_names;
             std::string window_title;
             int crop_top;
             int crop_bottom;

@@ -34,6 +34,12 @@ namespace play_runner {
         WindowInfo & out
     );
 
+    bool FindWindowByTitleRules(
+        const std::string & have_title_name,
+        const std::vector<std::string> & skip_title_names,
+        WindowInfo & out
+    );
+
     bool IsProcessRunning(const std::string & process_name);
 
     CapturedFrame CaptureWindowFrame(const WindowInfo & window);

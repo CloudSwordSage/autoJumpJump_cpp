@@ -357,6 +357,54 @@ namespace play_runner {
         return false;
     }
 
+    bool FindWindowByTitleRules(
+        const std::string & have_title_name,
+        const std::vector<std::string> & skip_title_names,
+        WindowInfo & out
+    ) {
+        const std::string have_lower = ToLowerAscii(have_title_name);
+        if (have_lower.empty()) {
+            return false;
+        }
+
+        std::vector<std::string> skip_lower;
+        skip_lower.reserve(skip_title_names.size());
+        for (const auto & s : skip_title_names) {
+            std::string lowered = ToLowerAscii(s);
+            if (!lowered.empty()) {
+                skip_lower.push_back(std::move(lowered));
+            }
+        }
+
+        std::vector<WindowInfo> windows = EnumerateWindows();
+        for (const auto & win : windows) {
+            std::string win_title = ToLowerAscii(win.title);
+            if (win_title.empty()) {
+                continue;
+            }
+            if (win_title.find(have_lower) == std::string::npos) {
+                continue;
+            }
+
+            bool should_skip = false;
+            for (const auto & skip : skip_lower) {
+                if (!skip.empty() &&
+                    win_title.find(skip) != std::string::npos) {
+                    should_skip = true;
+                    break;
+                }
+            }
+            if (should_skip) {
+                continue;
+            }
+
+            out = win;
+            return true;
+        }
+
+        return false;
+    }
+
     bool IsProcessRunning(const std::string & process_name) {
         const std::string process_lower = ToLowerAscii(process_name);
         if (process_lower.empty()) {

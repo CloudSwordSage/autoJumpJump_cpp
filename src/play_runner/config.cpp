@@ -149,7 +149,8 @@ namespace play_runner {
         AppConfig BuildDefaultConfig() {
             AppConfig config{};
 
-            config.capture.process_name = u8"跳一跳";
+            config.capture.have_title_name = u8"跳一跳";
+            config.capture.skip_title_names = {};
             config.capture.window_title = "Real-time Monitor";
             config.capture.crop_top = 10;
             config.capture.crop_bottom = 10;
@@ -309,7 +310,16 @@ namespace play_runner {
             return config;
         }
 
-        AssignIfPresent(j, "process_name", config.capture.process_name);
+        bool has_have_title_name = false;
+        auto have_title_name_it = j.find("have_title_name");
+        if (have_title_name_it != j.end() && !have_title_name_it->is_null()) {
+            has_have_title_name = true;
+            AssignIfPresent(j, "have_title_name", config.capture.have_title_name);
+        }
+        if (!has_have_title_name) {
+            AssignIfPresent(j, "process_name", config.capture.have_title_name);
+        }
+        AssignIfPresent(j, "skip_title_names", config.capture.skip_title_names);
         AssignIfPresent(j, "window_title", config.capture.window_title);
         AssignIfPresent(j, "crop_top", config.capture.crop_top);
         AssignIfPresent(j, "crop_bottom", config.capture.crop_bottom);
@@ -510,7 +520,8 @@ namespace play_runner {
 
         json j;
 
-        j["process_name"] = config.capture.process_name;
+        j["have_title_name"] = config.capture.have_title_name;
+        j["skip_title_names"] = config.capture.skip_title_names;
         j["debug"] = config.debug;
         j["window_title"] = config.capture.window_title;
         j["crop_top"] = config.capture.crop_top;

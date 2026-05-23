@@ -543,11 +543,38 @@ namespace play_runner {
             ImGui::TextUnformatted("全局");
             ImGui::Separator();
 
-            ImGui::TextUnformatted("进程名");
+            ImGui::TextUnformatted("窗口标题包含");
             ImGui::InputText(
-                "##process_name",
-                &working_config_.capture.process_name
+                "##have_title_name",
+                &working_config_.capture.have_title_name
             );
+
+            if (ImGui::TreeNode("跳过窗口标题包含")) {
+                for (std::size_t i = 0;
+                     i < working_config_.capture.skip_title_names.size();
+                     ++i) {
+                    ImGui::PushID(static_cast<int>(i));
+                    ImGui::TextUnformatted("关键字");
+                    ImGui::InputText(
+                        "##skip_title_name",
+                        &working_config_.capture.skip_title_names[i]
+                    );
+                    ImGui::SameLine();
+                    if (ImGui::Button("删除")) {
+                        working_config_.capture.skip_title_names.erase(
+                            working_config_.capture.skip_title_names.begin() +
+                            i
+                        );
+                        ImGui::PopID();
+                        break;
+                    }
+                    ImGui::PopID();
+                }
+                if (ImGui::Button("新增")) {
+                    working_config_.capture.skip_title_names.push_back("");
+                }
+                ImGui::TreePop();
+            }
 
             ImGui::Checkbox("调试", &working_config_.debug);
             ImGui::SameLine();
