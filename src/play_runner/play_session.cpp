@@ -184,6 +184,8 @@ namespace play_runner {
     int PlaySession::Run() {
         InputControl input_control;
         std::atomic<bool> & exit_requested = ui_state_->exit_requested;
+        std::atomic<bool> session_stop(false);
+        std::atomic<bool> window_lost(false);
         AppConfig initial_config = ui_state_->GetConfigSnapshot();
 
         JumpAdaptiveFitter adaptive_fitter(ui_state_, GetDefaultConfigPath());
@@ -246,9 +248,12 @@ namespace play_runner {
             HWND hwnd = reinterpret_cast<HWND>(
                 reinterpret_cast<void *>(window_.handle)
             );
-            while (!exit_requested.load()) {
+            ui_state_->SetTargetWindowFound(true);
+            while (!exit_requested.load() && !session_stop.load()) {
                 if (!::IsWindow(hwnd)) {
-                    exit_requested.store(true);
+                    ui_state_->SetTargetWindowFound(false);
+                    window_lost.store(true);
+                    session_stop.store(true);
                     break;
                 }
 
@@ -837,7 +842,7 @@ namespace play_runner {
                     frame_counter = 0;
                 }
 
-                if (exit_requested.load()) {
+                if (exit_requested.load() || session_stop.load()) {
                     break;
                 }
             }
@@ -848,7 +853,7 @@ namespace play_runner {
         bool prev_space = false;
         bool prev_ctrl_q = false;
 
-        while (!exit_requested.load()) {
+        while (!exit_requested.load() && !session_stop.load()) {
             bool key_ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
             bool key_s = (GetAsyncKeyState('S') & 0x8000) != 0;
             bool key_d = (GetAsyncKeyState('D') & 0x8000) != 0;
@@ -895,11 +900,14 @@ namespace play_runner {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
         }
 
-        exit_requested.store(true);
+        session_stop.store(true);
         if (worker.joinable()) {
             worker.join();
         }
 
+        if (window_lost.load()) {
+            return 1;
+        }
         return 0;
     }
 

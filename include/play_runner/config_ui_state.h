@@ -42,6 +42,9 @@ namespace play_runner {
                 int & out_offset_y
             );
 
+            void SetTargetWindowFound(bool found);
+            bool IsTargetWindowFound() const;
+
             std::atomic<bool> exit_requested;
 
         private:
@@ -56,6 +59,7 @@ namespace play_runner {
             std::atomic<std::uint64_t> foot_calib_result_id_{0};
             std::atomic<int> foot_calib_offset_x_{0};
             std::atomic<int> foot_calib_offset_y_{0};
+            std::atomic<bool> target_window_found_{false};
     };
 
 } // namespace play_runner

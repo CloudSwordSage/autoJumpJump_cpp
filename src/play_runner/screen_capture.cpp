@@ -357,6 +357,22 @@ namespace play_runner {
         return false;
     }
 
+    bool IsProcessRunning(const std::string & process_name) {
+        const std::string process_lower = ToLowerAscii(process_name);
+        if (process_lower.empty()) {
+            return false;
+        }
+
+        auto process_names = BuildProcessNameMap();
+        for (const auto & kv : process_names) {
+            if (kv.second.find(process_lower) != std::string::npos) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     CapturedFrame CaptureWindowFrame(const WindowInfo & window) {
         HWND hwnd =
             reinterpret_cast<HWND>(reinterpret_cast<void *>(window.handle));

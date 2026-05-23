@@ -125,4 +125,12 @@ namespace play_runner {
         return true;
     }
 
+    void ConfigUiState::SetTargetWindowFound(bool found) {
+        target_window_found_.store(found);
+    }
+
+    bool ConfigUiState::IsTargetWindowFound() const {
+        return target_window_found_.load();
+    }
+
 } // namespace play_runner

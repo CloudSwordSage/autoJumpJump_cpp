@@ -329,6 +329,7 @@ namespace play_runner {
         }
 
         ImGui::BeginChild("##toolbar", ImVec2(0, 42.0f), false);
+        bool target_window_found = ui_state_->IsTargetWindowFound();
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("字体");
         ImGui::SameLine();
@@ -375,6 +376,16 @@ namespace play_runner {
             font_dirty_ = true;
         }
 
+        if (!target_window_found) {
+            const char * msg = "未找到窗口";
+            float text_w = ImGui::CalcTextSize(msg).x;
+            float center_x =
+                (ImGui::GetWindowContentRegionMax().x - text_w) * 0.5f;
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), center_x));
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", msg);
+        }
+
         ImGui::SameLine();
         ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - 90.0f);
         if (ImGui::Button("校准")) {
@@ -396,13 +407,23 @@ namespace play_runner {
                 "按下开始校准之后鼠标右键游戏窗口以获取前台焦点)"
             );
             ImGui::Separator();
+            if (!target_window_found) {
+                ImGui::TextColored(
+                    ImVec4(1.0f, 0.4f, 0.4f, 1.0f),
+                    "%s",
+                    "未找到窗口，无法校准"
+                );
+            }
             if (pending_calibration_request_id_ != 0) {
                 ImGui::TextUnformatted("校准中... 请保持角色静止");
             }
-            if (ImGui::Button("开始校准")) {
-                pending_calibration_request_id_ =
-                    ui_state_->RequestFootCalibration();
-                status_text_ = "已发起校准请求";
+            {
+                ScopedImGuiDisabled disable(!target_window_found);
+                if (ImGui::Button("开始校准")) {
+                    pending_calibration_request_id_ =
+                        ui_state_->RequestFootCalibration();
+                    status_text_ = "已发起校准请求";
+                }
             }
             ImGui::SameLine();
             if (ImGui::Button("关闭")) {

@@ -34,6 +34,8 @@ namespace play_runner {
         WindowInfo & out
     );
 
+    bool IsProcessRunning(const std::string & process_name);
+
     CapturedFrame CaptureWindowFrame(const WindowInfo & window);
 
     POINT LogicalToPhysicalPoint(
