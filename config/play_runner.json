@@ -32,6 +32,8 @@
   "foot_center_offset_y": 0,
   "stable_min_frames": 5,
   "stable_pos_eps": 2,
+  "enable_adaptive_adjustment": true,
+  "press_duration_mode": 0,
 
   "onnx_model_path": "models/yolo11n_last.onnx",
   "onnx_input_width": 640,

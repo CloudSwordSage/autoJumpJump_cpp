@@ -355,6 +355,9 @@ namespace play_runner {
                     }
 
                     AppConfig config = ui_state_->GetConfigSnapshot();
+                    if (!config.jump.enable_adaptive_adjustment) {
+                        continue;
+                    }
                     const int max_segments = config.jump.params.max_segments;
                     const int min_len = config.jump.params.min_len;
 

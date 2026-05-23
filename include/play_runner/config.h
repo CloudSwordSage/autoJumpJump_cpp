@@ -52,6 +52,8 @@ namespace play_runner {
             int foot_center_offset_y;
             int stable_min_frames;
             int stable_pos_eps;
+            bool enable_adaptive_adjustment;
+            int press_duration_mode;
     };
 
     struct OnnxConfig {

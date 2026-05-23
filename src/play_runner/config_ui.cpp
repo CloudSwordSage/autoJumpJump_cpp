@@ -95,6 +95,32 @@ namespace play_runner {
             return changed;
         }
 
+        class ScopedImGuiDisabled {
+            public:
+                explicit ScopedImGuiDisabled(bool disabled)
+                    : disabled_(disabled) {
+                    if (!disabled_) {
+                        return;
+                    }
+                    ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+                    ImGui::PushStyleVar(
+                        ImGuiStyleVar_Alpha,
+                        ImGui::GetStyle().Alpha * 0.5f
+                    );
+                }
+
+                ~ScopedImGuiDisabled() {
+                    if (!disabled_) {
+                        return;
+                    }
+                    ImGui::PopStyleVar();
+                    ImGui::PopItemFlag();
+                }
+
+            private:
+                bool disabled_;
+        };
+
         ImU32 ToColorU32(unsigned int rgba) {
             unsigned int r = (rgba >> 24) & 0xff;
             unsigned int g = (rgba >> 16) & 0xff;
@@ -504,7 +530,34 @@ namespace play_runner {
 
             ImGui::Checkbox("调试", &working_config_.debug);
             ImGui::SameLine();
+            bool adaptive_toggle_changed = ImGui::Checkbox(
+                "启用自适应调整",
+                &working_config_.jump.enable_adaptive_adjustment
+            );
+            if (adaptive_toggle_changed &&
+                working_config_.jump.enable_adaptive_adjustment) {
+                working_config_.jump.press_duration_mode = 0;
+            }
+            ImGui::SameLine();
             ImGui::Checkbox("自动重启", &working_config_.auto_restart);
+
+            {
+                ScopedImGuiDisabled disable_mode_select(
+                    working_config_.jump.enable_adaptive_adjustment
+                );
+                ImGui::RadioButton(
+                    "使用分段函数",
+                    &working_config_.jump.press_duration_mode,
+                    0
+                );
+                ImGui::SameLine();
+                ImGui::RadioButton(
+                    "使用基础参数",
+                    &working_config_.jump.press_duration_mode,
+                    1
+                );
+            }
+
             ImGui::Checkbox(
                 "启用监控窗口",
                 &working_config_.display.enable_monitor_window

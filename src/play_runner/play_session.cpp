@@ -98,6 +98,9 @@ namespace play_runner {
         }
 
         double EvalPressDurationMs(double distance, const JumpConfig & jump) {
+            if (jump.press_duration_mode == 1) {
+                return distance * jump.jump_alpha + jump.jump_beta;
+            }
             const JumpSegment * selected = nullptr;
             for (const auto & seg : jump.params.segments) {
                 if (distance >= seg.x_start &&
@@ -457,9 +460,11 @@ namespace play_runner {
                     jump_in_progress = false;
                     if (!prev_fail_detected) {
                         pending_jump.active = false;
-                        adaptive_fitter.DiscardRecent(
-                            config.jump.params.fail_discard_count
-                        );
+                        if (config.jump.enable_adaptive_adjustment) {
+                            adaptive_fitter.DiscardRecent(
+                                config.jump.params.fail_discard_count
+                            );
+                        }
                     }
                 }
 
@@ -612,7 +617,8 @@ namespace play_runner {
                             const int sign = proj >= 0.0 ? 1 : -1;
                             const double b = std::sqrt(vx * vx + vy * vy);
                             const double x = pending_jump.a_distance + b * sign;
-                            if (x >= 0.0) {
+                            if (x >= 0.0 &&
+                                config.jump.enable_adaptive_adjustment) {
                                 adaptive_fitter.PushSample(
                                     x,
                                     pending_jump.press_duration_ms

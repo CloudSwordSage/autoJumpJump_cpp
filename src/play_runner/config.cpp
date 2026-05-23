@@ -85,7 +85,8 @@ namespace play_runner {
                 }
                 if (params.best_split >
                     static_cast<int>(params.segments.size())) {
-                    params.best_split = static_cast<int>(params.segments.size());
+                    params.best_split =
+                        static_cast<int>(params.segments.size());
                 }
             }
         }
@@ -172,6 +173,8 @@ namespace play_runner {
             config.jump.foot_center_offset_y = 0;
             config.jump.stable_min_frames = 3;
             config.jump.stable_pos_eps = 2;
+            config.jump.enable_adaptive_adjustment = false;
+            config.jump.press_duration_mode = 0;
 
             config.onnx.model_path = "models/yolo11n_last.onnx";
             config.onnx.input_width = 640;
@@ -353,24 +356,50 @@ namespace play_runner {
         if (has_jump_params && (!has_jump_alpha || !has_jump_beta)) {
             const json & jump_params_obj = *jump_params_it;
             if (!has_jump_alpha) {
-                AssignIfPresent(jump_params_obj, "jump_alpha", config.jump.jump_alpha);
+                AssignIfPresent(
+                    jump_params_obj,
+                    "jump_alpha",
+                    config.jump.jump_alpha
+                );
             }
             if (!has_jump_beta) {
-                AssignIfPresent(jump_params_obj, "jump_beta", config.jump.jump_beta);
+                AssignIfPresent(
+                    jump_params_obj,
+                    "jump_beta",
+                    config.jump.jump_beta
+                );
             }
         }
 
-        AssignIfPresent(j, "foot_center_offset_x", config.jump.foot_center_offset_x);
-        AssignIfPresent(j, "foot_center_offset_y", config.jump.foot_center_offset_y);
+        AssignIfPresent(
+            j,
+            "foot_center_offset_x",
+            config.jump.foot_center_offset_x
+        );
+        AssignIfPresent(
+            j,
+            "foot_center_offset_y",
+            config.jump.foot_center_offset_y
+        );
 
         (void)has_jump_params;
         SanitizeJumpParams(config.jump.params);
         AssignIfPresent(j, "stable_min_frames", config.jump.stable_min_frames);
         AssignIfPresent(j, "stable_pos_eps", config.jump.stable_pos_eps);
-
-        AssignIfPresent(j, "onnx_model_path", config.onnx.model_path);
-        AssignIfPresent(j, "onnx_input_width", config.onnx.input_width);
-        AssignIfPresent(j, "onnx_input_height", config.onnx.input_height);
+        AssignIfPresent(
+            j,
+            "enable_adaptive_adjustment",
+            config.jump.enable_adaptive_adjustment
+        );
+        AssignIfPresent(
+            j,
+            "press_duration_mode",
+            config.jump.press_duration_mode
+        );
+        if (config.jump.press_duration_mode != 0 &&
+            config.jump.press_duration_mode != 1) {
+            config.jump.press_duration_mode = 0;
+        }
         AssignIfPresent(j, "onnx_score_threshold", config.onnx.score_threshold);
         AssignIfPresent(
             j,
@@ -525,6 +554,9 @@ namespace play_runner {
         j["foot_center_offset_y"] = config.jump.foot_center_offset_y;
         j["stable_min_frames"] = config.jump.stable_min_frames;
         j["stable_pos_eps"] = config.jump.stable_pos_eps;
+        j["enable_adaptive_adjustment"] =
+            config.jump.enable_adaptive_adjustment;
+        j["press_duration_mode"] = config.jump.press_duration_mode;
 
         std::filesystem::path base = GetExecutableDirectory();
         j["onnx_model_path"] =
