@@ -146,7 +146,9 @@ namespace play_runner {
           frame_texture_w_(0), frame_texture_h_(0),
           right_preview_column_width_(360.0f), auto_scroll_logs_(true),
           selected_font_index_(0), font_size_px_(20.0f), font_dirty_(true),
-          open_success_popup_(false), success_popup_message_("") {
+          open_success_popup_(false), success_popup_message_(""),
+          open_calibration_popup_(false), last_calibration_result_id_(0),
+          pending_calibration_request_id_(0) {
         last_log_seq_ = Logger::Instance().GetLastSeq();
 
         std::filesystem::path font_dir = GetWindowsFontDir();
@@ -287,6 +289,19 @@ namespace play_runner {
             return;
         }
 
+        int calib_x = 0;
+        int calib_y = 0;
+        if (ui_state_->ConsumeFootCalibrationResult(
+                last_calibration_result_id_,
+                calib_x,
+                calib_y
+            )) {
+            working_config_.jump.foot_center_offset_x = calib_x;
+            working_config_.jump.foot_center_offset_y = calib_y;
+            status_text_ = "校准完成并已写入配置";
+            pending_calibration_request_id_ = 0;
+        }
+
         ImGui::BeginChild("##toolbar", ImVec2(0, 42.0f), false);
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted("字体");
@@ -333,7 +348,42 @@ namespace play_runner {
             )) {
             font_dirty_ = true;
         }
+
+        ImGui::SameLine();
+        ImGui::SetCursorPosX(ImGui::GetWindowContentRegionMax().x - 90.0f);
+        if (ImGui::Button("校准")) {
+            open_calibration_popup_ = true;
+        }
         ImGui::EndChild();
+
+        if (open_calibration_popup_) {
+            ImGui::OpenPopup("##calibration_popup");
+            open_calibration_popup_ = false;
+        }
+        if (ImGui::BeginPopupModal(
+                "##calibration_popup",
+                nullptr,
+                ImGuiWindowFlags_AlwaysAutoResize
+            )) {
+            ImGui::TextUnformatted(
+                "请将游戏重启, 在0分的界面进行校准\n(Tips: "
+                "按下开始校准之后鼠标右键游戏窗口以获取前台焦点)"
+            );
+            ImGui::Separator();
+            if (pending_calibration_request_id_ != 0) {
+                ImGui::TextUnformatted("校准中... 请保持角色静止");
+            }
+            if (ImGui::Button("开始校准")) {
+                pending_calibration_request_id_ =
+                    ui_state_->RequestFootCalibration();
+                status_text_ = "已发起校准请求";
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("关闭")) {
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
+        }
 
         ImGui::Separator();
 
@@ -537,7 +587,7 @@ namespace play_runner {
             float jump_beta =
                 static_cast<float>(working_config_.jump.jump_beta);
             if (SliderFloatWithInput(
-                    "alpha",
+                    "基础系数 alpha",
                     jump_alpha,
                     0.0f,
                     10.0f,
@@ -547,13 +597,96 @@ namespace play_runner {
                     static_cast<double>(jump_alpha);
             }
             if (SliderFloatWithInput(
-                    "beta",
+                    "基础偏置 beta",
                     jump_beta,
                     -2000.0f,
                     2000.0f,
                     "%.3f"
                 )) {
                 working_config_.jump.jump_beta = static_cast<double>(jump_beta);
+            }
+
+            SliderIntWithInput(
+                "脚底校准偏移 X",
+                working_config_.jump.foot_center_offset_x,
+                -200,
+                200
+            );
+            SliderIntWithInput(
+                "脚底校准偏移 Y",
+                working_config_.jump.foot_center_offset_y,
+                -200,
+                200
+            );
+
+            SliderIntWithInput(
+                "历史样本容量",
+                working_config_.jump.params.history_size,
+                1,
+                5000
+            );
+            SliderIntWithInput(
+                "失败丢弃条数",
+                working_config_.jump.params.fail_discard_count,
+                0,
+                100
+            );
+            SliderIntWithInput(
+                "最大分段数",
+                working_config_.jump.params.max_segments,
+                1,
+                20
+            );
+            SliderIntWithInput(
+                "最小段长度",
+                working_config_.jump.params.min_len,
+                2,
+                100
+            );
+
+            ImGui::Separator();
+            ImGui::TextUnformatted("自适应分段（只读）");
+            AppConfig applied_config = ui_state_->GetConfigSnapshot();
+            const JumpParamsConfig & view_params = applied_config.jump.params;
+            int seg_count = static_cast<int>(view_params.segments.size());
+            ImGui::Text("当前分段数: %d", seg_count);
+            ImGui::Text("最佳分段数: %d", view_params.best_split);
+
+            if (seg_count > 0 &&
+                ImGui::BeginTable(
+                    "##jump_segments_table",
+                    5,
+                    ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                        ImGuiTableFlags_SizingFixedFit
+                )) {
+                ImGui::TableSetupColumn("段");
+                ImGui::TableSetupColumn("a");
+                ImGui::TableSetupColumn("b");
+                ImGui::TableSetupColumn("x_start");
+                ImGui::TableSetupColumn("x_end");
+                ImGui::TableHeadersRow();
+
+                for (int i = 0; i < seg_count; ++i) {
+                    const JumpSegment & seg =
+                        view_params.segments[static_cast<std::size_t>(i)];
+                    ImGui::TableNextRow();
+
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::Text("%d", i + 1);
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::Text("%.6f", seg.a);
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::Text("%.6f", seg.b);
+                    ImGui::TableSetColumnIndex(3);
+                    ImGui::Text("%.2f", seg.x_start);
+                    ImGui::TableSetColumnIndex(4);
+                    if (seg.x_end == -1.0) {
+                        ImGui::TextUnformatted("-1");
+                    } else {
+                        ImGui::Text("%.2f", seg.x_end);
+                    }
+                }
+                ImGui::EndTable();
             }
 
             SliderIntWithInput(
@@ -982,6 +1115,7 @@ namespace play_runner {
             Logger::Instance().Error("SaveConfig failed: " + config_path_);
             return;
         }
+        working_config_ = LoadConfigOrDefault(config_path_);
         success_popup_message_ = "保存成功";
         open_success_popup_ = true;
     }
@@ -994,6 +1128,7 @@ namespace play_runner {
             return;
         }
         ui_state_->ApplyConfig(working_config_);
+        working_config_ = ui_state_->GetConfigSnapshot();
         status_text_ = "保存并应用成功";
         success_popup_message_ = "保存并应用成功";
         open_success_popup_ = true;

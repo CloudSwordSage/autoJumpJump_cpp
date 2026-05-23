@@ -6,6 +6,7 @@
 #include "play_runner/inference.h"
 #include "play_runner/input_control.h"
 #include "play_runner/internal/fail_template_engine.h"
+#include "play_runner/internal/jump_adaptive.h"
 #include "play_runner/internal/performance_profiler.h"
 #include "play_runner/logging.h"
 
@@ -13,7 +14,9 @@
 #include <chrono>
 #include <cmath>
 #include <exception>
+#include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -32,6 +35,117 @@ namespace play_runner {
                    a.input_height == b.input_height &&
                    a.score_threshold == b.score_threshold &&
                    a.nms_iou_threshold == b.nms_iou_threshold;
+        }
+
+        bool FocusWindow(HWND hwnd) {
+            if (!hwnd || !::IsWindow(hwnd)) {
+                return false;
+            }
+
+            DWORD target_thread = ::GetWindowThreadProcessId(hwnd, nullptr);
+            DWORD cur_thread = ::GetCurrentThreadId();
+            HWND fg = ::GetForegroundWindow();
+            DWORD fg_thread = fg ? ::GetWindowThreadProcessId(fg, nullptr) : 0;
+
+            if (target_thread != 0 && target_thread != cur_thread) {
+                ::AttachThreadInput(cur_thread, target_thread, TRUE);
+            }
+            if (fg_thread != 0 && fg_thread != cur_thread) {
+                ::AttachThreadInput(cur_thread, fg_thread, TRUE);
+            }
+
+            ::ShowWindowAsync(hwnd, SW_RESTORE);
+            ::SetWindowPos(
+                hwnd,
+                HWND_TOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+            );
+            ::SetWindowPos(
+                hwnd,
+                HWND_NOTOPMOST,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW
+            );
+
+            INPUT alt_down{};
+            alt_down.type = INPUT_KEYBOARD;
+            alt_down.ki.wVk = VK_MENU;
+            INPUT alt_up = alt_down;
+            alt_up.ki.dwFlags = KEYEVENTF_KEYUP;
+            ::SendInput(1, &alt_down, sizeof(INPUT));
+            ::SendInput(1, &alt_up, sizeof(INPUT));
+
+            ::BringWindowToTop(hwnd);
+            ::SetForegroundWindow(hwnd);
+            ::SetActiveWindow(hwnd);
+            ::SetFocus(hwnd);
+
+            if (fg_thread != 0 && fg_thread != cur_thread) {
+                ::AttachThreadInput(cur_thread, fg_thread, FALSE);
+            }
+            if (target_thread != 0 && target_thread != cur_thread) {
+                ::AttachThreadInput(cur_thread, target_thread, FALSE);
+            }
+
+            return ::GetForegroundWindow() == hwnd;
+        }
+
+        double EvalPressDurationMs(double distance, const JumpConfig & jump) {
+            const JumpSegment * selected = nullptr;
+            for (const auto & seg : jump.params.segments) {
+                if (distance >= seg.x_start &&
+                    (seg.x_end == -1.0 || distance <= seg.x_end)) {
+                    selected = &seg;
+                    break;
+                }
+            }
+            if (selected) {
+                return distance * selected->a + selected->b;
+            }
+            return distance * jump.jump_alpha + jump.jump_beta;
+        }
+
+        const BlockCandidate * SelectFootBlock(
+            const std::vector<BlockCandidate> & candidates,
+            int foot_x,
+            int foot_y
+        ) {
+            const BlockCandidate * best_containing = nullptr;
+            int best_area = 0;
+            for (const auto & c : candidates) {
+                const int x2 = c.x + c.width;
+                const int y2 = c.y + c.height;
+                if (foot_x >= c.x && foot_x < x2 && foot_y >= c.y &&
+                    foot_y < y2) {
+                    if (!best_containing || c.area < best_area) {
+                        best_containing = &c;
+                        best_area = c.area;
+                    }
+                }
+            }
+            if (best_containing) {
+                return best_containing;
+            }
+
+            const BlockCandidate * best_nearest = nullptr;
+            double best_dist2 = std::numeric_limits<double>::infinity();
+            for (const auto & c : candidates) {
+                const double dx = static_cast<double>(c.center_x - foot_x);
+                const double dy = static_cast<double>(c.center_y - foot_y);
+                const double dist2 = dx * dx + dy * dy;
+                if (dist2 < best_dist2) {
+                    best_dist2 = dist2;
+                    best_nearest = &c;
+                }
+            }
+            return best_nearest;
         }
 
         bool IsFailTemplateConfigEqual(
@@ -68,6 +182,8 @@ namespace play_runner {
         InputControl input_control;
         std::atomic<bool> & exit_requested = ui_state_->exit_requested;
         AppConfig initial_config = ui_state_->GetConfigSnapshot();
+
+        JumpAdaptiveFitter adaptive_fitter(ui_state_, GetDefaultConfigPath());
 
         OnnxConfig last_onnx_config = initial_config.onnx;
         auto onnx_infer =
@@ -109,6 +225,21 @@ namespace play_runner {
         InitDebugWindow(monitor_title, monitor_enabled, monitor_scale);
 
         std::thread worker([&]() {
+            struct PendingJumpSample {
+                    bool active = false;
+                    bool wait_press_done = false;
+                    bool seen_movement = false;
+                    std::uint64_t press_task_id = 0;
+                    int start_foot_x = -1;
+                    int start_foot_y = -1;
+                    double a_distance = 0.0;
+                    double press_duration_ms = 0.0;
+                    double forward_x = 0.0;
+                    double forward_y = 0.0;
+            };
+
+            PendingJumpSample pending_jump{};
+
             HWND hwnd = reinterpret_cast<HWND>(
                 reinterpret_cast<void *>(window_.handle)
             );
@@ -272,6 +403,15 @@ namespace play_runner {
                     foot_y = character.foot_y;
                 }
 
+                int corrected_foot_x = foot_x;
+                int corrected_foot_y = foot_y;
+                if (foot_x >= 0 && foot_y >= 0) {
+                    corrected_foot_x =
+                        foot_x - config.jump.foot_center_offset_x;
+                    corrected_foot_y =
+                        foot_y - config.jump.foot_center_offset_y;
+                }
+
                 if (foot_x >= 0 && foot_y >= 0) {
                     if (last_foot_x >= 0 && last_foot_y >= 0) {
                         int dx = foot_x - last_foot_x;
@@ -315,6 +455,12 @@ namespace play_runner {
                     last_foot_x = -1;
                     last_foot_y = -1;
                     jump_in_progress = false;
+                    if (!prev_fail_detected) {
+                        pending_jump.active = false;
+                        adaptive_fitter.DiscardRecent(
+                            config.jump.params.fail_discard_count
+                        );
+                    }
                 }
 
                 bool auto_jump_now = auto_jump_enabled.load();
@@ -366,10 +512,127 @@ namespace play_runner {
                     continue;
                 }
 
+                std::uint64_t new_calib_request_id = 0;
+                if (ui_state_->ConsumeFootCalibrationRequest(
+                        new_calib_request_id
+                    )) {
+                    bool focus_ok = FocusWindow(hwnd);
+                    if (!focus_ok) {
+                        Logger::Instance().Info(
+                            "校准聚焦失败: 目标窗口未获得前台焦点"
+                        );
+                    }
+                    int offset_x = config.jump.foot_center_offset_x;
+                    int offset_y = config.jump.foot_center_offset_y;
+                    bool ok = false;
+                    if (foot_x >= 0 && foot_y >= 0) {
+                        const BlockCandidate * foot_block =
+                            SelectFootBlock(candidates, foot_x, foot_y);
+                        if (foot_block) {
+                            offset_x = foot_x - foot_block->center_x;
+                            offset_y = foot_y - foot_block->center_y;
+                            ok = true;
+                        }
+                    }
+
+                    if (ok) {
+                        AppConfig updated = ui_state_->GetConfigSnapshot();
+                        updated.jump.foot_center_offset_x = offset_x;
+                        updated.jump.foot_center_offset_y = offset_y;
+                        ui_state_->ApplyConfig(updated);
+                        SaveConfig(GetDefaultConfigPath(), updated);
+                        Logger::Instance().Info(
+                            std::string("校准完成: offset_x=") +
+                            std::to_string(offset_x) +
+                            ", offset_y=" + std::to_string(offset_y)
+                        );
+                    } else {
+                        Logger::Instance().Info(
+                            "校准失败: 未检测到脚底或脚下方块"
+                        );
+                    }
+
+                    ui_state_->PublishFootCalibrationResult(
+                        new_calib_request_id,
+                        offset_x,
+                        offset_y
+                    );
+                }
+
                 profiler.StartTiming("Select_Target");
-                TargetBlock target =
-                    SelectTargetBlock(candidates, foot_x, foot_y);
+                TargetBlock target = SelectTargetBlock(
+                    candidates,
+                    corrected_foot_x,
+                    corrected_foot_y
+                );
                 profiler.EndTiming("Select_Target");
+
+                if (pending_jump.active && pending_jump.wait_press_done &&
+                    input_control.IsLongPressCompleted(
+                        pending_jump.press_task_id
+                    )) {
+                    pending_jump.wait_press_done = false;
+                    pending_jump.seen_movement = false;
+                    pending_jump.start_foot_x = foot_x;
+                    pending_jump.start_foot_y = foot_y;
+                    stable_frames = 0;
+                    last_foot_x = foot_x;
+                    last_foot_y = foot_y;
+                }
+
+                if (pending_jump.active && !pending_jump.wait_press_done &&
+                    !fail_detection.detected && foot_x >= 0 && foot_y >= 0) {
+                    const int movement_threshold =
+                        std::max(5, config.jump.stable_pos_eps * 3);
+                    if (!pending_jump.seen_movement) {
+                        const int dx = foot_x - pending_jump.start_foot_x;
+                        const int dy = foot_y - pending_jump.start_foot_y;
+                        if (std::abs(dx) > movement_threshold ||
+                            std::abs(dy) > movement_threshold) {
+                            pending_jump.seen_movement = true;
+                        }
+                    }
+
+                    if (pending_jump.seen_movement &&
+                        stable_frames >= config.jump.stable_min_frames) {
+                        const BlockCandidate * foot_block = SelectFootBlock(
+                            candidates,
+                            corrected_foot_x,
+                            corrected_foot_y
+                        );
+                        if (foot_block) {
+                            const double vx = static_cast<double>(
+                                corrected_foot_x - foot_block->center_x
+                            );
+                            const double vy = static_cast<double>(
+                                corrected_foot_y - foot_block->center_y
+                            );
+                            const double proj = vx * pending_jump.forward_x +
+                                                vy * pending_jump.forward_y;
+                            const int sign = proj >= 0.0 ? 1 : -1;
+                            const double b = std::sqrt(vx * vx + vy * vy);
+                            const double x = pending_jump.a_distance + b * sign;
+                            if (x >= 0.0) {
+                                adaptive_fitter.PushSample(
+                                    x,
+                                    pending_jump.press_duration_ms
+                                );
+                                Logger::Instance().Info(
+                                    std::string("Jump sample: x=") +
+                                    std::to_string(x) + ", y=" +
+                                    std::to_string(
+                                        pending_jump.press_duration_ms
+                                    ) +
+                                    ", a=" +
+                                    std::to_string(pending_jump.a_distance) +
+                                    ", b=" + std::to_string(b) +
+                                    ", sign=" + std::to_string(sign)
+                                );
+                            }
+                        }
+                        pending_jump.active = false;
+                    }
+                }
 
                 bool cursor_on_window = false;
                 {
@@ -387,8 +650,7 @@ namespace play_runner {
                     profiler.StartTiming("Manual_Jump");
                     if (target.has_target && !jump_in_progress) {
                         double duration =
-                            target.distance * config.jump.jump_alpha +
-                            config.jump.jump_beta;
+                            EvalPressDurationMs(target.distance, config.jump);
                         if (duration > 0.0) {
                             jump_in_progress = true;
                             last_jump_time = std::chrono::duration<double>(
@@ -397,6 +659,14 @@ namespace play_runner {
                                                  .count();
                             const int roi_top_edge_offset_px = 50;
                             const int press_y_min_in_cropped = 50;
+                            const double dir_x = static_cast<double>(
+                                target.block.center_x - corrected_foot_x
+                            );
+                            const double dir_y = static_cast<double>(
+                                target.block.center_y - corrected_foot_y
+                            );
+                            const double dir_norm =
+                                std::sqrt(dir_x * dir_x + dir_y * dir_y);
                             int press_overlay_x =
                                 frame.window_rect.left + crop_left;
                             int press_overlay_y =
@@ -412,12 +682,28 @@ namespace play_runner {
                             }
                             int press_y = press_overlay_y + press_y_in_cropped;
                             try {
-                                input_control.LeftLongPressAt(
-                                    press_x,
-                                    press_y,
-                                    static_cast<int>(duration)
-                                );
+                                std::uint64_t task_id =
+                                    input_control.LeftLongPressAt(
+                                        press_x,
+                                        press_y,
+                                        static_cast<int>(duration)
+                                    );
+                                if (task_id != 0 && dir_norm > 1e-6) {
+                                    pending_jump.active = true;
+                                    pending_jump.wait_press_done = true;
+                                    pending_jump.press_task_id = task_id;
+                                    pending_jump.seen_movement = false;
+                                    pending_jump.start_foot_x = -1;
+                                    pending_jump.start_foot_y = -1;
+                                    pending_jump.a_distance = target.distance;
+                                    pending_jump.press_duration_ms = duration;
+                                    pending_jump.forward_x = dir_x / dir_norm;
+                                    pending_jump.forward_y = dir_y / dir_norm;
+                                } else {
+                                    pending_jump.active = false;
+                                }
                             } catch (const std::exception & ex) {
+                                pending_jump.active = false;
                                 Logger::Instance().Error(
                                     std::string("Manual jump failed: ") +
                                     ex.what()
@@ -437,8 +723,8 @@ namespace play_runner {
                     double now_seconds =
                         std::chrono::duration<double>(now.time_since_epoch())
                             .count();
-                    double duration = target.distance * config.jump.jump_alpha +
-                                      config.jump.jump_beta;
+                    double duration =
+                        EvalPressDurationMs(target.distance, config.jump);
 
                     double cooldown = (duration / 1000.0) + 0.5;
 
@@ -446,6 +732,14 @@ namespace play_runner {
                         now_seconds - last_jump_time > cooldown) {
                         jump_in_progress = true;
                         last_jump_time = now_seconds;
+                        const double dir_x = static_cast<double>(
+                            target.block.center_x - corrected_foot_x
+                        );
+                        const double dir_y = static_cast<double>(
+                            target.block.center_y - corrected_foot_y
+                        );
+                        const double dir_norm =
+                            std::sqrt(dir_x * dir_x + dir_y * dir_y);
                         const int roi_top_edge_offset_px = 50;
                         const int press_y_min_in_cropped = 50;
                         int press_overlay_x =
@@ -462,12 +756,28 @@ namespace play_runner {
                         }
                         int press_y = press_overlay_y + press_y_in_cropped;
                         try {
-                            input_control.LeftLongPressAt(
-                                press_x,
-                                press_y,
-                                static_cast<int>(duration)
-                            );
+                            std::uint64_t task_id =
+                                input_control.LeftLongPressAt(
+                                    press_x,
+                                    press_y,
+                                    static_cast<int>(duration)
+                                );
+                            if (task_id != 0 && dir_norm > 1e-6) {
+                                pending_jump.active = true;
+                                pending_jump.wait_press_done = true;
+                                pending_jump.press_task_id = task_id;
+                                pending_jump.seen_movement = false;
+                                pending_jump.start_foot_x = -1;
+                                pending_jump.start_foot_y = -1;
+                                pending_jump.a_distance = target.distance;
+                                pending_jump.press_duration_ms = duration;
+                                pending_jump.forward_x = dir_x / dir_norm;
+                                pending_jump.forward_y = dir_y / dir_norm;
+                            } else {
+                                pending_jump.active = false;
+                            }
                         } catch (const std::exception & ex) {
+                            pending_jump.active = false;
                             Logger::Instance().Error(
                                 std::string("Auto jump failed: ") + ex.what()
                             );
@@ -527,46 +837,48 @@ namespace play_runner {
             }
         });
 
-        bool prev_key_s = false;
-        bool prev_key_d = false;
-        bool prev_key_space = false;
-        bool prev_key_p = false;
+        bool prev_ctrl_s = false;
+        bool prev_ctrl_d = false;
+        bool prev_space = false;
+        bool prev_ctrl_q = false;
 
         while (!exit_requested.load()) {
-            if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-                Logger::Instance().Info("ESC pressed, exiting");
-                exit_requested.store(true);
-                ExitProcess(0);
-            }
-
+            bool key_ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
             bool key_s = (GetAsyncKeyState('S') & 0x8000) != 0;
             bool key_d = (GetAsyncKeyState('D') & 0x8000) != 0;
             bool key_space = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
-            bool key_p = (GetAsyncKeyState('P') & 0x8000) != 0;
+            bool key_q = (GetAsyncKeyState('Q') & 0x8000) != 0;
 
-            if (key_s && !prev_key_s) {
+            bool ctrl_s = key_ctrl && key_s;
+            bool ctrl_d = key_ctrl && key_d;
+            bool ctrl_q = key_ctrl && key_q;
+
+            if (ctrl_s && !prev_ctrl_s) {
                 auto_jump_enabled.store(true);
                 Logger::Instance().Info("Auto jump enabled");
                 profiler.Reset();
             }
-            if (key_d && !prev_key_d) {
+            if (ctrl_d && !prev_ctrl_d) {
                 auto_jump_enabled.store(false);
                 Logger::Instance().Info("Auto jump disabled");
                 profiler.Reset();
             }
 
-            if (key_space && !prev_key_space) {
+            if (key_space && !prev_space) {
                 manual_jump_requested.store(true);
             }
 
-            if (key_p && !prev_key_p) {
-                Logger::Instance().Info("Capture key pressed (P)");
+            if (ctrl_q && !prev_ctrl_q) {
+                bool ok = adaptive_fitter.ExportSamplesCsv();
+                Logger::Instance().Info(
+                    ok ? "已导出样本CSV" : "导出样本CSV失败"
+                );
             }
 
-            prev_key_s = key_s;
-            prev_key_d = key_d;
-            prev_key_space = key_space;
-            prev_key_p = key_p;
+            prev_ctrl_s = ctrl_s;
+            prev_ctrl_d = ctrl_d;
+            prev_space = key_space;
+            prev_ctrl_q = ctrl_q;
 
             MSG msg;
             while (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE)) {

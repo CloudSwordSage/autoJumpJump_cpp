@@ -84,4 +84,45 @@ namespace play_runner {
         frame_.bgra = frame.bgra;
     }
 
+    std::uint64_t ConfigUiState::RequestFootCalibration() {
+        std::uint64_t id = foot_calib_request_id_.fetch_add(1) + 1;
+        return id;
+    }
+
+    bool ConfigUiState::ConsumeFootCalibrationRequest(std::uint64_t & out_request_id) {
+        std::uint64_t req = foot_calib_request_id_.load();
+        std::uint64_t consumed = foot_calib_consumed_request_id_.load();
+        if (req == 0 || req == consumed) {
+            return false;
+        }
+        foot_calib_consumed_request_id_.store(req);
+        out_request_id = req;
+        return true;
+    }
+
+    void ConfigUiState::PublishFootCalibrationResult(
+        std::uint64_t request_id,
+        int offset_x,
+        int offset_y
+    ) {
+        foot_calib_offset_x_.store(offset_x);
+        foot_calib_offset_y_.store(offset_y);
+        foot_calib_result_id_.store(request_id);
+    }
+
+    bool ConfigUiState::ConsumeFootCalibrationResult(
+        std::uint64_t & inout_last_result_id,
+        int & out_offset_x,
+        int & out_offset_y
+    ) {
+        std::uint64_t result_id = foot_calib_result_id_.load();
+        if (result_id == 0 || result_id == inout_last_result_id) {
+            return false;
+        }
+        out_offset_x = foot_calib_offset_x_.load();
+        out_offset_y = foot_calib_offset_y_.load();
+        inout_last_result_id = result_id;
+        return true;
+    }
+
 } // namespace play_runner

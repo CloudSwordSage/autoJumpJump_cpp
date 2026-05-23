@@ -17,8 +17,19 @@
   "lab_weight_a": 1.0,
   "lab_weight_b": 1.0,
 
-  "jump_alpha": 2.185,
-  "jump_beta": 0.0,
+  "jump_params": {
+    "best_split": 0,
+    "history_size": 1000,
+    "fail_discard_count": 3,
+    "max_segments": 5,
+    "min_len": 5,
+    "jump_alpha": 2.185,
+    "jump_beta": 0.0,
+    "segments": [
+    ]
+  },
+  "foot_center_offset_x": 0,
+  "foot_center_offset_y": 0,
   "stable_min_frames": 5,
   "stable_pos_eps": 2,
 

@@ -62,6 +62,9 @@ namespace play_runner {
             bool font_dirty_;
             bool open_success_popup_;
             std::string success_popup_message_;
+            bool open_calibration_popup_;
+            std::uint64_t last_calibration_result_id_;
+            std::uint64_t pending_calibration_request_id_;
 
             void DrawUi();
             void DrawLeftCategory();

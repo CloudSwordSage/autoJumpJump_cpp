@@ -7,6 +7,22 @@
 
 namespace play_runner {
 
+    struct JumpSegment {
+            double a;
+            double b;
+            double x_start;
+            double x_end;
+    };
+
+    struct JumpParamsConfig {
+            int best_split;
+            std::vector<JumpSegment> segments;
+            int history_size;
+            int fail_discard_count;
+            int max_segments;
+            int min_len;
+    };
+
     struct CaptureConfig {
             std::string process_name;
             std::string window_title;
@@ -31,6 +47,9 @@ namespace play_runner {
     struct JumpConfig {
             double jump_alpha;
             double jump_beta;
+            JumpParamsConfig params;
+            int foot_center_offset_x;
+            int foot_center_offset_y;
             int stable_min_frames;
             int stable_pos_eps;
     };

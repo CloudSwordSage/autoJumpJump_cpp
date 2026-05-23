@@ -59,6 +59,7 @@ add_library(cpp-play-core STATIC
     src/play_runner/debug_draw.cpp
     src/play_runner/performance_profiler.cpp
     src/play_runner/fail_template_engine.cpp
+    src/play_runner/jump_adaptive.cpp
     src/play_runner/play_session.cpp
 )
 

@@ -29,6 +29,19 @@ namespace play_runner {
             UiFrameSnapshot GetFrameSnapshot() const;
             void UpdateFrame(const CapturedFrame & frame);
 
+            std::uint64_t RequestFootCalibration();
+            bool ConsumeFootCalibrationRequest(std::uint64_t & out_request_id);
+            void PublishFootCalibrationResult(
+                std::uint64_t request_id,
+                int offset_x,
+                int offset_y
+            );
+            bool ConsumeFootCalibrationResult(
+                std::uint64_t & inout_last_result_id,
+                int & out_offset_x,
+                int & out_offset_y
+            );
+
             std::atomic<bool> exit_requested;
 
         private:
@@ -37,7 +50,12 @@ namespace play_runner {
 
             mutable std::mutex frame_mutex_;
             UiFrameSnapshot frame_;
+
+            std::atomic<std::uint64_t> foot_calib_request_id_{0};
+            std::atomic<std::uint64_t> foot_calib_consumed_request_id_{0};
+            std::atomic<std::uint64_t> foot_calib_result_id_{0};
+            std::atomic<int> foot_calib_offset_x_{0};
+            std::atomic<int> foot_calib_offset_y_{0};
     };
 
 } // namespace play_runner
-

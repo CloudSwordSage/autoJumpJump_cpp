@@ -18,6 +18,7 @@ namespace play_runner {
         enum class MouseButton { Left, Right };
 
         struct LongPressTask {
+                std::uint64_t id;
                 MouseButton button;
                 int x;
                 int y;
@@ -37,6 +38,8 @@ namespace play_runner {
         std::mutex g_jump_mutex;
         std::condition_variable g_jump_cv;
         std::atomic<bool> g_jump_worker_running{true};
+        std::atomic<std::uint64_t> g_next_task_id{1};
+        std::atomic<std::uint64_t> g_last_completed_task_id{0};
 
         void JumpWorkerFunc() {
             while (g_jump_worker_running.load()) {
@@ -101,6 +104,7 @@ namespace play_runner {
                 } catch (const std::exception & ex) {
                     Logger::Instance().Error(ex.what());
                 }
+                g_last_completed_task_id.store(task.id);
             }
         }
 
@@ -206,54 +210,65 @@ namespace play_runner {
         }
     }
 
-    void InputControl::LeftLongPress(int duration_ms) {
+    std::uint64_t InputControl::LeftLongPress(int duration_ms) {
         POINT cursor{};
         if (!::GetCursorPos(&cursor)) {
             throw std::runtime_error("GetCursorPos failed");
         }
-        LeftLongPressAt(cursor.x, cursor.y, duration_ms);
+        return LeftLongPressAt(cursor.x, cursor.y, duration_ms);
     }
 
-    void InputControl::LeftLongPressAt(int x, int y, int duration_ms) {
+    std::uint64_t InputControl::LeftLongPressAt(int x, int y, int duration_ms) {
         if (duration_ms < 0) {
             throw std::invalid_argument("duration_ms must be non-negative");
         }
 
         // 优化：限制队列长度为 1，防止堆积
         EnsureJumpWorkerStarted();
+        const std::uint64_t id = g_next_task_id.fetch_add(1);
         {
             std::lock_guard<std::mutex> lock(g_jump_mutex);
             if (!g_jump_queue.empty()) {
-                return; // 已有跳跃待执行，丢弃本次
+                return 0; // 已有跳跃待执行，丢弃本次
             }
-            g_jump_queue.push({MouseButton::Left, x, y, duration_ms});
+            g_jump_queue.push({id, MouseButton::Left, x, y, duration_ms});
         }
         g_jump_cv.notify_one();
+        return id;
     }
 
-    void InputControl::RightLongPress(int duration_ms) {
+    std::uint64_t InputControl::RightLongPress(int duration_ms) {
         POINT cursor{};
         if (!::GetCursorPos(&cursor)) {
             throw std::runtime_error("GetCursorPos failed");
         }
-        RightLongPressAt(cursor.x, cursor.y, duration_ms);
+        return RightLongPressAt(cursor.x, cursor.y, duration_ms);
     }
 
-    void InputControl::RightLongPressAt(int x, int y, int duration_ms) {
+    std::uint64_t InputControl::RightLongPressAt(int x, int y, int duration_ms) {
         if (duration_ms < 0) {
             throw std::invalid_argument("duration_ms must be non-negative");
         }
 
         // 优化：限制队列长度为 1，防止堆积
         EnsureJumpWorkerStarted();
+        const std::uint64_t id = g_next_task_id.fetch_add(1);
         {
             std::lock_guard<std::mutex> lock(g_jump_mutex);
             if (!g_jump_queue.empty()) {
-                return; // 已有跳跃待执行，丢弃本次
+                return 0; // 已有跳跃待执行，丢弃本次
             }
-            g_jump_queue.push({MouseButton::Right, x, y, duration_ms});
+            g_jump_queue.push({id, MouseButton::Right, x, y, duration_ms});
         }
         g_jump_cv.notify_one();
+        return id;
+    }
+
+    bool InputControl::IsLongPressCompleted(std::uint64_t task_id) const {
+        if (task_id == 0) {
+            return false;
+        }
+        return g_last_completed_task_id.load() >= task_id;
     }
 
 } // namespace play_runner

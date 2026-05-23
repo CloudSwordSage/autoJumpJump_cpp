@@ -13,10 +13,11 @@ namespace play_runner {
             void LeftClick();
             void RightClick();
 
-            void LeftLongPress(int duration_ms);
-            void LeftLongPressAt(int x, int y, int duration_ms);
-            void RightLongPress(int duration_ms);
-            void RightLongPressAt(int x, int y, int duration_ms);
+            std::uint64_t LeftLongPress(int duration_ms);
+            std::uint64_t LeftLongPressAt(int x, int y, int duration_ms);
+            std::uint64_t RightLongPress(int duration_ms);
+            std::uint64_t RightLongPressAt(int x, int y, int duration_ms);
+            bool IsLongPressCompleted(std::uint64_t task_id) const;
 
         private:
             void SendMouseEvent(

@@ -1,5 +1,6 @@
 #include "play_runner/config.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -18,6 +19,118 @@ namespace play_runner {
     namespace {
 
         using nlohmann::json;
+
+        template <typename T>
+        void AssignIfPresent(const json & j, const char * key, T & out) {
+            auto it = j.find(key);
+            if (it == j.end() || it->is_null()) {
+                return;
+            }
+            try {
+                out = it->get<T>();
+            } catch (...) {
+            }
+        }
+
+        JumpParamsConfig BuildDefaultJumpParams() {
+            JumpParamsConfig params{};
+            params.best_split = 0;
+            params.segments = {};
+            params.history_size = 1000;
+            params.fail_discard_count = 3;
+            params.max_segments = 5;
+            params.min_len = 2;
+            return params;
+        }
+
+        void SanitizeJumpParams(JumpParamsConfig & params) {
+            if (params.best_split < 0) {
+                params.best_split = 0;
+            }
+            if (params.history_size <= 0) {
+                params.history_size = 1000;
+            }
+            if (params.fail_discard_count < 0) {
+                params.fail_discard_count = 0;
+            }
+            if (params.max_segments <= 0) {
+                params.max_segments = 5;
+            }
+            if (params.min_len < 2) {
+                params.min_len = 2;
+            }
+
+            for (auto & seg : params.segments) {
+                if (seg.x_start < 0.0) {
+                    seg.x_start = 0.0;
+                }
+                if (seg.x_end < 0.0 && seg.x_end != -1.0) {
+                    seg.x_end = 0.0;
+                }
+            }
+
+            std::sort(
+                params.segments.begin(),
+                params.segments.end(),
+                [](const JumpSegment & left, const JumpSegment & right) {
+                    return left.x_start < right.x_start;
+                }
+            );
+
+            if (params.segments.empty()) {
+                params.best_split = 0;
+            } else {
+                if (params.best_split <= 0) {
+                    params.best_split = 1;
+                }
+                if (params.best_split >
+                    static_cast<int>(params.segments.size())) {
+                    params.best_split = static_cast<int>(params.segments.size());
+                }
+            }
+        }
+
+        void AssignIfPresent(
+            const json & j,
+            const char * key,
+            JumpParamsConfig & out
+        ) {
+            auto it = j.find(key);
+            if (it == j.end() || it->is_null() || !it->is_object()) {
+                return;
+            }
+
+            const json & obj = *it;
+            AssignIfPresent(obj, "best_split", out.best_split);
+            AssignIfPresent(obj, "history_size", out.history_size);
+            AssignIfPresent(obj, "fail_discard_count", out.fail_discard_count);
+            AssignIfPresent(obj, "max_segments", out.max_segments);
+            AssignIfPresent(obj, "min_len", out.min_len);
+
+            auto seg_it = obj.find("segments");
+            if (seg_it != obj.end() && seg_it->is_array()) {
+                std::vector<JumpSegment> segs;
+                segs.reserve(seg_it->size());
+                for (const auto & item : *seg_it) {
+                    if (!item.is_object()) {
+                        continue;
+                    }
+                    JumpSegment seg{};
+                    seg.a = 0.0;
+                    seg.b = 0.0;
+                    seg.x_start = 0.0;
+                    seg.x_end = -1.0;
+                    AssignIfPresent(item, "a", seg.a);
+                    AssignIfPresent(item, "b", seg.b);
+                    AssignIfPresent(item, "x_start", seg.x_start);
+                    AssignIfPresent(item, "x_end", seg.x_end);
+                    segs.push_back(seg);
+                }
+                if (!segs.empty()) {
+                    out.segments = std::move(segs);
+                }
+            }
+        }
 
         std::filesystem::path GetExecutableDirectory() {
 #ifdef _WIN32
@@ -54,6 +167,9 @@ namespace play_runner {
 
             config.jump.jump_alpha = 2.19;
             config.jump.jump_beta = 0.0;
+            config.jump.params = BuildDefaultJumpParams();
+            config.jump.foot_center_offset_x = 0;
+            config.jump.foot_center_offset_y = 0;
             config.jump.stable_min_frames = 3;
             config.jump.stable_pos_eps = 2;
 
@@ -83,18 +199,6 @@ namespace play_runner {
             config.debug = false;
 
             return config;
-        }
-
-        template <typename T>
-        void AssignIfPresent(const json & j, const char * key, T & out) {
-            auto it = j.find(key);
-            if (it == j.end() || it->is_null()) {
-                return;
-            }
-            try {
-                out = it->get<T>();
-            } catch (...) {
-            }
         }
 
         LogLevel ParseLogLevelJson(
@@ -227,8 +331,40 @@ namespace play_runner {
         AssignIfPresent(j, "lab_weight_a", config.lab.weight_a);
         AssignIfPresent(j, "lab_weight_b", config.lab.weight_b);
 
-        AssignIfPresent(j, "jump_alpha", config.jump.jump_alpha);
-        AssignIfPresent(j, "jump_beta", config.jump.jump_beta);
+        bool has_jump_params = false;
+        auto jump_params_it = j.find("jump_params");
+        if (jump_params_it != j.end() && jump_params_it->is_object()) {
+            has_jump_params = true;
+            AssignIfPresent(j, "jump_params", config.jump.params);
+        }
+
+        bool has_jump_alpha = false;
+        bool has_jump_beta = false;
+        auto jump_alpha_it = j.find("jump_alpha");
+        if (jump_alpha_it != j.end() && !jump_alpha_it->is_null()) {
+            has_jump_alpha = true;
+            AssignIfPresent(j, "jump_alpha", config.jump.jump_alpha);
+        }
+        auto jump_beta_it = j.find("jump_beta");
+        if (jump_beta_it != j.end() && !jump_beta_it->is_null()) {
+            has_jump_beta = true;
+            AssignIfPresent(j, "jump_beta", config.jump.jump_beta);
+        }
+        if (has_jump_params && (!has_jump_alpha || !has_jump_beta)) {
+            const json & jump_params_obj = *jump_params_it;
+            if (!has_jump_alpha) {
+                AssignIfPresent(jump_params_obj, "jump_alpha", config.jump.jump_alpha);
+            }
+            if (!has_jump_beta) {
+                AssignIfPresent(jump_params_obj, "jump_beta", config.jump.jump_beta);
+            }
+        }
+
+        AssignIfPresent(j, "foot_center_offset_x", config.jump.foot_center_offset_x);
+        AssignIfPresent(j, "foot_center_offset_y", config.jump.foot_center_offset_y);
+
+        (void)has_jump_params;
+        SanitizeJumpParams(config.jump.params);
         AssignIfPresent(j, "stable_min_frames", config.jump.stable_min_frames);
         AssignIfPresent(j, "stable_pos_eps", config.jump.stable_pos_eps);
 
@@ -363,8 +499,30 @@ namespace play_runner {
         j["lab_weight_a"] = config.lab.weight_a;
         j["lab_weight_b"] = config.lab.weight_b;
 
+        JumpParamsConfig jump_params = config.jump.params;
+        SanitizeJumpParams(jump_params);
+        json jump_params_json;
+        jump_params_json["best_split"] = jump_params.best_split;
+        jump_params_json["history_size"] = jump_params.history_size;
+        jump_params_json["fail_discard_count"] = jump_params.fail_discard_count;
+        jump_params_json["max_segments"] = jump_params.max_segments;
+        jump_params_json["min_len"] = jump_params.min_len;
+        jump_params_json["jump_alpha"] = config.jump.jump_alpha;
+        jump_params_json["jump_beta"] = config.jump.jump_beta;
+        jump_params_json["segments"] = json::array();
+        for (const auto & seg : jump_params.segments) {
+            json seg_json;
+            seg_json["a"] = seg.a;
+            seg_json["b"] = seg.b;
+            seg_json["x_start"] = seg.x_start;
+            seg_json["x_end"] = seg.x_end;
+            jump_params_json["segments"].push_back(seg_json);
+        }
+        j["jump_params"] = jump_params_json;
         j["jump_alpha"] = config.jump.jump_alpha;
         j["jump_beta"] = config.jump.jump_beta;
+        j["foot_center_offset_x"] = config.jump.foot_center_offset_x;
+        j["foot_center_offset_y"] = config.jump.foot_center_offset_y;
         j["stable_min_frames"] = config.jump.stable_min_frames;
         j["stable_pos_eps"] = config.jump.stable_pos_eps;
 
